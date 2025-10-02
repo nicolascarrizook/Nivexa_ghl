@@ -1,0 +1,238 @@
+/* App.css - AWS Theme Compatible Styles */
+
+/* Remove default Vite styles that conflict with AWS theme */
+#root {
+  /* Remove centering and padding that interferes with full-width layout */
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* Keep useful logo animations for branding if needed */
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+
+.logo:hover {
+  filter: drop-shadow(0 0 2em #FF9900aa); /* AWS orange glow */
+}
+
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+/* AWS-specific component extensions */
+.aws-fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.aws-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+/* Custom AWS-style components */
+.aws-metric-card {
+  transition: all 0.2s ease-in-out;
+}
+
+.aws-metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px -8px rgba(0, 0, 0, 0.5);
+}
+
+.aws-table-hover tr:hover {
+  background-color: #2F3F4F;
+  transition: background-color 0.15s ease-in-out;
+}
+
+/* Loading states */
+.aws-skeleton {
+  background: linear-gradient(90deg, #232F3E 25%, #2F3F4F 50%, #232F3E 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Focus improvements for accessibility */
+.aws-focus-ring:focus {
+  box-shadow: 0 0 0 3px rgba(0, 115, 187, 0.3);
+  outline: none;
+}
+
+/* Responsive grid improvements */
+@media (max-width: 1024px) {
+  .grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .grid-cols-4,
+  .grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
+  
+  .flex-col-mobile {
+    flex-direction: column;
+  }
+  
+  .space-x-3 > * + * {
+    margin-left: 0;
+    margin-top: 0.75rem;
+  }
+}
+
+/* AWS Console-style scrollbars for specific elements */
+.aws-scrollbar::-webkit-scrollbar {
+  width: 12px;
+}
+
+.aws-scrollbar::-webkit-scrollbar-track {
+  background: #1D2733;
+  border-radius: 6px;
+}
+
+.aws-scrollbar::-webkit-scrollbar-thumb {
+  background: #4A5568;
+  border-radius: 6px;
+  border: 2px solid #1D2733;
+}
+
+.aws-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+
+/* Improved form focus states */
+.input-aws:focus,
+.select-aws:focus,
+.textarea-aws:focus {
+  border-color: #0073BB;
+  box-shadow: 0 0 0 3px rgba(0, 115, 187, 0.1);
+}
+
+/* Button loading state */
+.btn-loading {
+  position: relative;
+  color: transparent;
+}
+
+.btn-loading::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  top: 50%;
+  left: 50%;
+  margin-left: -8px;
+  margin-top: -8px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Status indicator animations */
+.status-pulse {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Improved modal animations */
+.modal-enter {
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+.modal-enter-active {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.modal-exit {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.modal-exit-active {
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 0.15s ease-in, transform 0.15s ease-in;
+}
+
+/* High contrast mode adjustments */
+@media (prefers-contrast: high) {
+  .aws-card {
+    border-width: 2px;
+  }
+  
+  .btn-aws-primary,
+  .btn-aws-secondary,
+  .btn-aws-outline {
+    border-width: 2px;
+  }
+}
+
+/* Print-specific overrides */
+@media print {
+  .btn-aws-primary,
+  .btn-aws-secondary,
+  .btn-aws-outline,
+  .btn-aws-ghost {
+    border: 1px solid #000 !important;
+    background: white !important;
+    color: black !important;
+  }
+  
+  .aws-card {
+    break-inside: avoid;
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+  }
+}

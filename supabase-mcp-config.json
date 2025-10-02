@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": ["-y", "@captn/supabase-mcp"],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "sbp_d8084794ffe8e1f8415ff57623a7faa37b9e2f54"
+      }
+    },
+    "seq-thinking-cc": {
+      "command": "node",
+      "args": ["/path/to/seq-thinking-cc/dist/index.js"]
+    },
+    "browsermcp": {
+      "command": "npx",
+      "args": ["@browsermcp/mcp@latest"]
+    }
+  }
+}

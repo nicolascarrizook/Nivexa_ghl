@@ -1,0 +1,203 @@
+import { Meta } from '@storybook/addon-docs';
+
+<Meta title="Sistema de Diseño/Introducción" />
+
+# 🎨 Sistema de Diseño Nivexa
+
+Bienvenido al Sistema de Diseño de **Nivexa CRM** - Una solución completa para la gestión de proyectos de construcción y arquitectura en México.
+
+## 🚀 Inicio Rápido
+
+```tsx
+// Importar componentes del sistema de diseño
+import { 
+  StatCard, 
+  DataTable, 
+  DashboardLayout,
+  ClientCard 
+} from '@/design-system/components';
+
+// Usar en tu aplicación
+function App() {
+  return (
+    <DashboardLayout>
+      <StatCard 
+        title="Clientes Activos" 
+        value="2,543" 
+        trend="up" 
+      />
+    </DashboardLayout>
+  );
+}
+```
+
+## 📦 Categorías de Componentes
+
+### **Data Display** 📊
+Componentes para visualización de datos y métricas de negocio:
+- **StatCard** - Tarjetas de métricas con tendencias
+- **DataTable** - Tablas avanzadas con sorting y filtros
+- **MetricGrid** - Grid responsivo de KPIs
+- **ActivityFeed** - Timeline de actividades recientes
+- **ChartCard** - Gráficos con exportación
+
+### **Inputs** 📝
+Componentes de entrada de datos optimizados para México:
+- **SearchCommand** - Paleta de comandos global (Cmd+K)
+- **FilterBar** - Sistema de filtros avanzados
+- **DateRangePicker** - Selector de fechas con presets mexicanos
+- **MoneyInput** - Input de moneda MXN
+- **PhoneInput** - Teléfonos con WhatsApp
+
+### **Layout** 🏗️
+Estructura y organización de la interfaz:
+- **DashboardLayout** - Layout principal con sidebar
+- **PageContainer** - Wrapper de páginas
+- **SectionCard** - Agrupación de contenido
+- **DetailPanel** - Panel deslizable
+- **QuickActions** - Acciones flotantes
+
+### **Business** 💼
+Componentes específicos del CRM de construcción:
+- **ClientCard** - Información de clientes
+- **ProjectCard** - Tarjetas de proyectos
+- **InvoicePreview** - Preview de facturas
+- **TaskList** - Gestión de tareas
+- **NotificationCenter** - Centro de notificaciones
+
+### **Feedback** 💬
+Comunicación y retroalimentación al usuario:
+- **SuccessModal** - Confirmaciones exitosas
+- **ConfirmDialog** - Diálogos de confirmación
+- **ProgressTracker** - Indicador de progreso
+- **StatusIndicator** - Estados visuales
+- **EmptyState** - Estados vacíos
+
+## 🎨 Tokens de Diseño
+
+### Colores
+El sistema usa una paleta de colores consistente:
+- **Primary** - Morado (#8B5CF6) - Identidad de marca
+- **Success** - Verde (#10B981) - Estados positivos
+- **Warning** - Amarillo (#F59E0B) - Alertas
+- **Error** - Rojo (#EF4444) - Errores
+- **Gray** - Escala de grises para UI
+
+### Tipografía
+- **Font Family**: Inter (UI), JetBrains Mono (código)
+- **Escalas**: De `xs` (12px) a `6xl` (60px)
+- **Pesos**: 400 (regular), 500 (medium), 600 (semibold), 700 (bold)
+
+### Espaciado
+Sistema basado en grid de 4px:
+- `space-1`: 4px
+- `space-2`: 8px
+- `space-3`: 12px
+- `space-4`: 16px
+- `space-6`: 24px
+- `space-8`: 32px
+
+## 🌙 Modo Oscuro
+
+Todos los componentes soportan modo oscuro automáticamente:
+
+```tsx
+// El tema se aplica automáticamente
+<div className="dark">
+  <StatCard /> {/* Se adapta al modo oscuro */}
+</div>
+```
+
+## 🇲🇽 Localización Mexicana
+
+El sistema está optimizado para el mercado mexicano:
+- **Moneda**: Formato MXN por defecto
+- **Fechas**: Formato DD/MM/YYYY
+- **Teléfonos**: +52 por defecto
+- **Idioma**: Español mexicano
+- **Horarios**: Zona horaria de México
+- **Fiscales**: Soporte para RFC y facturas
+
+## ♿ Accesibilidad
+
+Cumplimiento WCAG 2.1 AA:
+- ✅ Navegación por teclado
+- ✅ Screen readers
+- ✅ Alto contraste
+- ✅ Focus visible
+- ✅ ARIA labels
+- ✅ Roles semánticos
+
+## 🚀 Performance
+
+Optimizaciones implementadas:
+- **Code Splitting** - Carga bajo demanda
+- **Lazy Loading** - Componentes diferidos
+- **Memoización** - React.memo donde es necesario
+- **Virtual Scrolling** - Para listas largas
+- **Image Optimization** - Lazy loading de imágenes
+
+## 📱 Responsive Design
+
+Mobile-first con breakpoints:
+- **sm**: 640px
+- **md**: 768px
+- **lg**: 1024px
+- **xl**: 1280px
+- **2xl**: 1536px
+
+## 🔧 Tecnologías
+
+- **React 19** - Framework UI
+- **TypeScript** - Type safety
+- **Tailwind CSS v4** - Estilos utility-first
+- **Framer Motion** - Animaciones
+- **Radix UI** - Componentes accesibles
+- **Recharts** - Visualización de datos
+- **Vite** - Build tool
+
+## 📚 Recursos
+
+### Enlaces Útiles
+- [Documentación de Componentes](/?path=/docs/components--docs)
+- [Guía de Contribución](/?path=/docs/contributing--docs)
+- [Changelog](/?path=/docs/changelog--docs)
+
+### Ejemplos de Uso
+- [Dashboard Completo](/?path=/story/examples-dashboard--default)
+- [Formulario de Cliente](/?path=/story/examples-client-form--default)
+- [Tabla de Proyectos](/?path=/story/examples-projects-table--default)
+
+## 💻 Instalación
+
+```bash
+# Instalar dependencias
+npm install
+
+# Ejecutar Storybook
+npm run storybook
+
+# Build de producción
+npm run build-storybook
+```
+
+## 🤝 Contribución
+
+Para contribuir al sistema de diseño:
+
+1. Crea un branch desde `main`
+2. Desarrolla tu componente
+3. Agrega stories y documentación
+4. Asegura que pase los tests
+5. Crea un Pull Request
+
+## 📝 Licencia
+
+© 2024 Nivexa. Todos los derechos reservados.
+
+---
+
+<div style={{ marginTop: '3rem', padding: '2rem', backgroundColor: 'var(--color-primary-50)', borderRadius: '8px' }}>
+  <h3>🎉 ¡Comienza a Construir!</h3>
+  <p>Explora los componentes en el sidebar y comienza a crear interfaces increíbles para el CRM de construcción.</p>
+</div>

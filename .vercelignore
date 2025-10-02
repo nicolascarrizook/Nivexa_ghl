@@ -1,0 +1,51 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Testing
+coverage
+.vitest
+
+# Development files
+.env.local
+.env.development
+.env.test
+
+# Build artifacts
+dist
+.vite
+.cache
+
+# Storybook
+storybook-static
+.storybook-build
+
+# IDE and Editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Misc
+.git
+.gitignore
+README_INPUTS.md
+*.md.backup
+
+# Documentation (optional - remove if you want docs deployed)
+docs/
+*.md
+!README.md
+!DEPLOYMENT.md
