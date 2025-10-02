@@ -22,4 +22,20 @@ export default defineConfig({
       "@types": path.resolve(__dirname, "./src/types"),
     },
   },
+  // Production optimizations for Vercel deployment
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'query-vendor': ['@tanstack/react-query'],
+          'supabase': ['@supabase/supabase-js'],
+        },
+      },
+    },
+    sourcemap: false, // Disable sourcemaps for production
+    minify: 'esbuild',
+    chunkSizeWarningLimit: 1000,
+    target: 'es2015', // Better browser compatibility
+  },
 });
