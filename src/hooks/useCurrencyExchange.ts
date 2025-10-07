@@ -32,10 +32,10 @@ interface UseCurrencyExchangeReturn {
 export function useCurrencyExchange(
   options: UseCurrencyExchangeOptions = {}
 ): UseCurrencyExchangeReturn {
-  const { 
-    autoRefresh = true, 
+  const {
+    autoRefresh = true,
     refreshInterval = 30, // 30 minutes default
-    rateType = ExchangeRateType.OFICIAL,
+    rateType = ExchangeRateType.BLUE, // Use blue rate by default (real market rate in Argentina)
     includeAllRates = false
   } = options;
 
@@ -229,7 +229,7 @@ export function useCurrencyExchange(
 /**
  * Hook for simple currency display
  */
-export function useCurrencyDisplay(rateType: ExchangeRateType = ExchangeRateType.OFICIAL) {
+export function useCurrencyDisplay(rateType: ExchangeRateType = ExchangeRateType.BLUE) {
   const { 
     exchangeRate, 
     allRates,
