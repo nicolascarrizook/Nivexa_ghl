@@ -167,7 +167,7 @@ export function TermsConditionsStep() {
             <h3 className="text-base font-normal text-secondary mb-4">
               Resumen del Contrato
             </h3>
-            
+
             <div className="space-y-4">
               <div className="flex items-center justify-between py-2 border-b border-gray-800/30">
                 <span className="text-xs text-tertiary">Proyecto</span>
@@ -175,27 +175,85 @@ export function TermsConditionsStep() {
                   {formData.projectName || 'Sin nombre'}
                 </span>
               </div>
-              
+
               <div className="flex items-center justify-between py-2 border-b border-gray-800/30">
                 <span className="text-xs text-tertiary">Cliente</span>
                 <span className="text-sm text-gray-300">
                   {formData.clientName || 'Sin especificar'}
                 </span>
               </div>
-              
+
               <div className="flex items-center justify-between py-2 border-b border-gray-800/30">
-                <span className="text-xs text-tertiary">Valor Total</span>
-                <span className="text-sm text-gray-600">
-                  ${formData.totalAmount?.toLocaleString('es-AR') || '0'}
+                <span className="text-xs text-tertiary">Moneda</span>
+                <span className="text-sm text-gray-300">
+                  {formData.currency === 'USD' ? 'Dólares (USD)' : 'Pesos (ARS)'}
                 </span>
               </div>
-              
-              <div className="flex items-center justify-between py-2">
+
+              {formData.currency === 'USD' && formData.exchangeRate && (
+                <div className="flex items-center justify-between py-2 border-b border-gray-800/30">
+                  <span className="text-xs text-tertiary">Cotización</span>
+                  <span className="text-sm text-gray-300">
+                    1 USD = ${formData.exchangeRate.toLocaleString('es-AR')}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between py-2 border-b border-gray-800/30">
+                <span className="text-xs text-tertiary">Valor Total</span>
+                <span className="text-sm text-gray-600 font-medium">
+                  {formData.currency === 'USD' ? 'USD ' : '$'}
+                  {formData.totalAmount?.toLocaleString('es-AR') || '0'}
+                </span>
+              </div>
+
+              {formData.currency === 'USD' && formData.totalAmount && formData.exchangeRate && (
+                <div className="flex items-center justify-between py-2 border-b border-gray-800/30">
+                  <span className="text-xs text-tertiary">Valor en Pesos</span>
+                  <span className="text-sm text-gray-500">
+                    ${(formData.totalAmount * formData.exchangeRate).toLocaleString('es-AR')}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between py-2 border-b border-gray-800/30">
+                <span className="text-xs text-tertiary">Anticipo</span>
+                <span className="text-sm text-gray-300 font-medium">
+                  {formData.currency === 'USD' ? 'USD ' : '$'}
+                  {formData.downPaymentAmount?.toLocaleString('es-AR') || '0'}
+                  {formData.downPaymentPercentage && ` (${formData.downPaymentPercentage}%)`}
+                </span>
+              </div>
+
+              {formData.adminFeeType !== 'none' && formData.adminFeeType && (
+                <div className="flex items-center justify-between py-2 border-b border-gray-800/30">
+                  <span className="text-xs text-tertiary">Comisión Adm.</span>
+                  <span className="text-sm text-red-400">
+                    {formData.adminFeeType === 'percentage' && formData.adminFeePercentage
+                      ? `${formData.adminFeePercentage}% del anticipo`
+                      : formData.adminFeeType === 'fixed' && formData.adminFeeAmount
+                      ? `${formData.currency === 'USD' ? 'USD ' : '$'}${formData.adminFeeAmount.toLocaleString('es-AR')}`
+                      : 'Manual'}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between py-2 border-b border-gray-800/30">
                 <span className="text-xs text-tertiary">Plan de Pagos</span>
                 <span className="text-sm text-gray-300">
                   {formData.installmentCount || 0} cuotas
                 </span>
               </div>
+
+              {formData.installmentAmount && (
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-xs text-tertiary">Valor por Cuota</span>
+                  <span className="text-sm text-gray-300 font-medium">
+                    {formData.currency === 'USD' ? 'USD ' : '$'}
+                    {formData.installmentAmount.toLocaleString('es-AR')}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
