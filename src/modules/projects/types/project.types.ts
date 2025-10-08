@@ -48,6 +48,12 @@ export interface ProjectFormData {
   projectPhases?: ProjectPhase[];
   paymentTerms?: string;
   specialConditions?: string;
+  contractNotes?: string;
+
+  // Contract Signature
+  clientSignature?: string;
+  signatureDate?: string;
+  contractSigned?: boolean;
 
   // Step 5: Review & Confirm
   termsAccepted?: boolean;

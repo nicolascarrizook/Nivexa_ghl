@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useProjectWizard } from '../../hooks/useProjectWizard';
+import { ContractPreviewModal } from './ContractPreviewModal';
 
 const STANDARD_TERMS = [
   {
@@ -55,6 +57,16 @@ const STANDARD_TERMS = [
 
 export function TermsConditionsStep() {
   const { formData, updateFormData } = useProjectWizard();
+  const [showContractPreview, setShowContractPreview] = useState(false);
+
+  const handleSign = (signatureData: { clientSignature: string; date: string }) => {
+    updateFormData({
+      clientSignature: signatureData.clientSignature,
+      signatureDate: signatureData.date,
+      contractSigned: true,
+      termsAccepted: true, // Auto-accept terms when signed
+    });
+  };
 
   return (
     <div className="space-y-8">
@@ -136,26 +148,41 @@ export function TermsConditionsStep() {
           {/* Legal Compliance */}
           <div className="card-flat p-6">
             <h3 className="text-base font-normal text-secondary mb-4">
-              Cumplimiento Legal
+              Estado del Contrato
             </h3>
-            
+
             <div className="space-y-3">
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={formData.termsAccepted || false}
-                  onChange={(e) => updateFormData({ termsAccepted: e.target.checked })}
-                  className="mt-1 w-4 h-4 text-gray-600 bg-gray-800 border-gray-700 rounded focus:ring-red-500 focus:ring-2"
-                />
-                <div>
-                  <p className="text-sm text-gray-300 group-hover:text-gray-200 transition-colors">
-                    Confirmo que he revisado todos los términos y condiciones con el cliente
-                  </p>
-                  <p className="text-xs text-tertiary mt-1">
-                    El cliente ha leído y aceptado estos términos
-                  </p>
+              {formData.contractSigned ? (
+                <div className="flex items-start gap-3 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <svg className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm text-green-500 font-medium">
+                      Contrato firmado digitalmente
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      El cliente ha revisado y aceptado todos los términos del contrato
+                    </p>
+                  </div>
                 </div>
-              </label>
+              ) : (
+                <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                  <svg className="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm text-yellow-500 font-medium">
+                      Contrato pendiente de firma
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      El cliente debe firmar el contrato antes de continuar
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -257,67 +284,70 @@ export function TermsConditionsStep() {
             </div>
           </div>
 
-          {/* Document Templates */}
+          {/* Contract Actions */}
           <div className="card-flat p-6">
             <h3 className="text-base font-normal text-secondary mb-4">
-              Plantillas de Documentos
+              Acciones del Contrato
             </h3>
-            
+
             <div className="space-y-3">
               <button
                 type="button"
-                className="w-full btn-ghost text-sm flex items-center justify-between"
+                onClick={() => setShowContractPreview(true)}
+                className="w-full btn-ghost text-sm flex items-center justify-between hover:bg-gray-800/50"
               >
                 <span className="flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} 
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                          d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                   </svg>
-                  Contrato Estándar
+                  Previsualizar Contrato
                 </span>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} 
-                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </button>
-              
-              <button
-                type="button"
-                className="w-full btn-ghost text-sm flex items-center justify-between"
-              >
-                <span className="flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} 
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Anexo de Pagos
-                </span>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} 
-                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </button>
-              
-              <button
-                type="button"
-                className="w-full btn-ghost text-sm flex items-center justify-between"
-              >
-                <span className="flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} 
-                          d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                  </svg>
-                  Generar Contrato PDF
-                </span>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} 
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                         d="M9 5l7 7-7 7" />
                 </svg>
               </button>
+
+              {formData.contractSigned ? (
+                <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium text-green-500 mb-1">
+                        Contrato Firmado
+                      </h4>
+                      <p className="text-xs text-gray-400">
+                        Firmado por: {formData.clientSignature}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Fecha: {formData.signatureDate ? new Date(formData.signatureDate).toLocaleDateString('es-AR') : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowContractPreview(true)}
+                  className="w-full px-4 py-3 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  Firmar Contrato
+                </button>
+              )}
             </div>
-            
+
             <p className="text-xs text-tertiary mt-4">
-              Los documentos se generarán con la información ingresada
+              Revise y firme el contrato antes de crear el proyecto
             </p>
           </div>
 
@@ -341,6 +371,14 @@ export function TermsConditionsStep() {
           </div>
         </div>
       </div>
+
+      {/* Contract Preview Modal */}
+      <ContractPreviewModal
+        isOpen={showContractPreview}
+        onClose={() => setShowContractPreview(false)}
+        formData={formData}
+        onSign={handleSign}
+      />
     </div>
   );
 }

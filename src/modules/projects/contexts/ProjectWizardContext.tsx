@@ -183,10 +183,10 @@ export function ProjectWizardProvider({
           return hasPaymentConfig && paymentConfirmed;
 
         case 4: // Terms & Conditions
-          return true; // No mandatory fields in terms step
+          return !!formData.contractSigned; // Contract must be signed
 
         case 5: // Review & Confirm
-          return !!formData.termsAccepted;
+          return !!formData.contractSigned; // Contract signature required
 
         default:
           return false;
