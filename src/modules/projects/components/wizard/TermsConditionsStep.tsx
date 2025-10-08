@@ -2,29 +2,54 @@ import { useProjectWizard } from '../../hooks/useProjectWizard';
 
 const STANDARD_TERMS = [
   {
-    id: 'payment_obligation',
-    title: 'Obligación de Pago',
-    content: 'El cliente se compromete a realizar todos los pagos según el cronograma establecido. Los pagos deben realizarse en las fechas acordadas sin excepción.',
+    id: 'objeto_contrato',
+    title: 'Primera: OBJETO DEL CONTRATO',
+    content: 'El presente contrato se suscribe a los efectos de encomendar la tarea de dirección y construcción de la obra según las especificaciones técnicas y ubicación detalladas en el proyecto. La obra se ejecutará conforme a planos, memorias descriptivas y especificaciones técnicas aprobadas.',
   },
   {
-    id: 'late_fees',
-    title: 'Cargos por Mora',
-    content: 'En caso de retraso en los pagos, se aplicarán los cargos por mora especificados. Estos cargos comenzarán a aplicarse después del período de gracia establecido.',
+    id: 'aporte_partes',
+    title: 'Segunda: APORTE DE LAS PARTES',
+    content: 'El Cliente aportará la suma total establecida en el proyecto, representando el 100% de la inversión para la construcción. Los pagos se realizarán según el cronograma acordado: un anticipo inicial y cuotas mensuales dentro de los primeros 10 días de cada mes.',
   },
   {
-    id: 'project_changes',
-    title: 'Cambios al Proyecto',
-    content: 'Cualquier cambio al alcance del proyecto debe ser acordado por escrito y puede resultar en ajustes al precio y cronograma.',
+    id: 'diferencias_finalizacion',
+    title: 'Tercera: DIFERENCIAS Y FINALIZACIÓN DE APORTES',
+    content: 'En el caso de que el Cliente en el transcurso del contrato no cumpliera en tiempo y forma con los desembolsos dinerarios establecidos, la obra se amoldará a los ritmos de dichos desembolsos. La entrega final de obra será realizada una vez finalizados la totalidad de los aportes contractuales.',
   },
   {
-    id: 'cancellation',
-    title: 'Política de Cancelación',
-    content: 'En caso de cancelación del proyecto, el anticipo no será reembolsable y se cobrarán los trabajos realizados hasta la fecha.',
+    id: 'lugar_pago',
+    title: 'Cuarta: LUGAR DE PAGO',
+    content: 'Los desembolsos dinerarios deberán ser abonados durante los primeros 10 (diez) días de cada mes en las oficinas del Estudio o mediante transferencia bancaria a la cuenta designada. Se emitirá el comprobante correspondiente por cada pago recibido.',
   },
   {
-    id: 'warranty',
-    title: 'Garantía',
-    content: 'Se ofrece garantía de 1 año en mano de obra y según especificaciones del fabricante para materiales.',
+    id: 'plazo_ejecucion',
+    title: 'Quinta: PLAZO DE EJECUCIÓN',
+    content: 'La tarea de proyecto, dirección y construcción de la obra se iniciará en la fecha establecida y se finalizará según el cronograma acordado. Los plazos podrán ser modificados por causas de fuerza mayor, condiciones climáticas adversas, o incumplimiento en los pagos del Cliente.',
+  },
+  {
+    id: 'calidad_constructiva',
+    title: 'Sexta: CALIDAD CONSTRUCTIVA',
+    content: 'La obra se materializa de manera tradicional con materiales de primera calidad: estructura de hormigón armado según cálculo, mampostería de ladrillo hueco revocada, cubierta con estructura metálica y chapa galvanizada, instalaciones sanitarias y eléctricas completas, carpinterías de aluminio, aberturas de seguridad, pisos de porcelanato, y terminaciones de primera calidad en todos los rubros.',
+  },
+  {
+    id: 'responsabilidad',
+    title: 'Séptima: RESPONSABILIDAD',
+    content: 'El Director de Obra será solidariamente responsable por las contingencias que pudieran surgir durante la ejecución de la obra y hasta su aprobación de final de obra. También será responsable por los vicios que pudieran surgir finalizada la obra por el plazo establecido por el Art. 1255 del Código Civil y Comercial de la Nación, sus acordes, concordantes y demás leyes complementarias.',
+  },
+  {
+    id: 'domicilios_competencia',
+    title: 'Octava: DOMICILIOS Y COMPETENCIA',
+    content: 'Para todas las notificaciones derivadas del presente convenio, las partes constituyen los domicilios especiales denunciados en el contrato. En caso de litigio, las partes se someterán exclusivamente a la competencia de los tribunales ordinarios correspondientes, con expresa renuncia a cualesquiera otras que pudieran corresponderles.',
+  },
+  {
+    id: 'sellado_ley',
+    title: 'Novena: SELLADO DE LEY',
+    content: 'El gasto de sellado del presente contrato será soportado según lo establecido por las partes de común acuerdo, conforme a la legislación vigente en materia de sellado de contratos.',
+  },
+  {
+    id: 'normas',
+    title: 'Décima: NORMAS',
+    content: 'El presente contrato se regirá por las normas del Art. 1251 y siguientes del Código Civil y Comercial de la Nación, sus acordes, concordantes y leyes supletorias aplicables en materia de locación de obra y servicios profesionales.',
   },
 ];
 
