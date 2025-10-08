@@ -1,6 +1,7 @@
 import { projectService } from "../services/ProjectService";
 import { supabase } from "@/config/supabase";
 import { newCashBoxService } from "@/services/cash/NewCashBoxService";
+import { contractStorageService } from "../services/ContractStorageService";
 import React, {
   createContext,
   useCallback,
@@ -209,9 +210,43 @@ export function ProjectWizardProvider({
 
       // Submit the project using real Supabase service
       const result = await projectService.createProjectFromForm(formData as ProjectFormData);
-      
+
       if (!result) {
         throw new Error('Failed to create project');
+      }
+
+      // Generate and upload signed contract PDF
+      if (formData.contractSigned && result.id) {
+        try {
+          console.log('Generating and uploading signed contract PDF...');
+          const contractData = await contractStorageService.uploadContract(
+            result.id,
+            formData as ProjectFormData
+          );
+
+          // Update project metadata with contract information
+          await supabase
+            .from('projects')
+            .update({
+              metadata: {
+                ...(result.metadata || {}),
+                contract: {
+                  pdfPath: contractData.path,
+                  pdfUrl: contractData.url,
+                  signedBy: formData.clientSignature,
+                  signedAt: formData.signatureDate,
+                  generatedAt: new Date().toISOString(),
+                },
+              },
+            })
+            .eq('id', result.id);
+
+          console.log('Contract PDF uploaded successfully:', contractData);
+        } catch (error) {
+          console.error('Error uploading contract PDF:', error);
+          // Don't fail the project creation if PDF upload fails
+          // The contract can be regenerated later if needed
+        }
       }
 
       // Process payment confirmation if it exists

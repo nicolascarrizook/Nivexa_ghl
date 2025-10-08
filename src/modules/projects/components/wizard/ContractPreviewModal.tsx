@@ -1,6 +1,7 @@
 import { X, FileText, Download, CheckCircle } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { ProjectFormData } from '../../types/project.types';
+import { contractPdfService } from '../../services/ContractPdfService';
 
 interface ContractPreviewModalProps {
   isOpen: boolean;
@@ -70,6 +71,7 @@ export function ContractPreviewModal({
 }: ContractPreviewModalProps) {
   const [clientSignature, setClientSignature] = useState('');
   const [isSigning, setIsSigning] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const contractRef = useRef<HTMLDivElement>(null);
 
   if (!isOpen) return null;
@@ -89,8 +91,16 @@ export function ContractPreviewModal({
     onClose();
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleDownloadPDF = async () => {
+    try {
+      setIsDownloading(true);
+      await contractPdfService.generateAndDownload(formData as any);
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      alert('Error al descargar el contrato. Por favor intente nuevamente.');
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const formatCurrency = (amount: number | undefined, currency: 'ARS' | 'USD' = 'ARS') => {
@@ -117,11 +127,16 @@ export function ContractPreviewModal({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={handlePrint}
-              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Imprimir"
+              onClick={handleDownloadPDF}
+              disabled={isDownloading}
+              className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Descargar PDF"
             >
-              <Download className="w-5 h-5" />
+              {isDownloading ? (
+                <div className="w-5 h-5 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Download className="w-5 h-5" />
+              )}
             </button>
             <button
               onClick={onClose}
