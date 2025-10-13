@@ -16,6 +16,13 @@ export interface ClientSearchResult {
   projects_count?: number;
 }
 
+export interface ClientWithProjects extends Client {
+  total_projects: number;
+  active_projects: number;
+  total_revenue_ars: number;
+  total_revenue_usd: number;
+}
+
 class ClientService {
   /**
    * Search clients by name, email, phone or tax_id
@@ -103,6 +110,77 @@ class ClientService {
       return data || [];
     } catch (error) {
       console.error('ClientService: Error fetching all clients', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all clients with project statistics
+   */
+  async getAllClientsWithProjects(): Promise<ClientWithProjects[]> {
+    try {
+      const { data: clients, error: clientsError } = await supabase
+        .from('clients')
+        .select('*')
+        .order('name');
+
+      if (clientsError) {
+        console.error('Error fetching clients:', clientsError);
+        throw clientsError;
+      }
+
+      if (!clients || clients.length === 0) {
+        return [];
+      }
+
+      // Get project counts and revenue for each client
+      const clientsWithProjects = await Promise.all(
+        clients.map(async (client) => {
+          // Count total projects
+          const { count: totalProjects } = await supabase
+            .from('projects')
+            .select('*', { count: 'exact', head: true })
+            .eq('client_id', client.id);
+
+          // Count active projects
+          const { count: activeProjects } = await supabase
+            .from('projects')
+            .select('*', { count: 'exact', head: true })
+            .eq('client_id', client.id)
+            .eq('status', 'active');
+
+          // Calculate total revenue (sum of total_amount from projects)
+          const { data: projects } = await supabase
+            .from('projects')
+            .select('total_amount, currency')
+            .eq('client_id', client.id);
+
+          let totalRevenueARS = 0;
+          let totalRevenueUSD = 0;
+
+          if (projects) {
+            projects.forEach(project => {
+              if (project.currency === 'USD') {
+                totalRevenueUSD += project.total_amount || 0;
+              } else {
+                totalRevenueARS += project.total_amount || 0;
+              }
+            });
+          }
+
+          return {
+            ...client,
+            total_projects: totalProjects || 0,
+            active_projects: activeProjects || 0,
+            total_revenue_ars: totalRevenueARS,
+            total_revenue_usd: totalRevenueUSD,
+          };
+        })
+      );
+
+      return clientsWithProjects;
+    } catch (error) {
+      console.error('ClientService: Error fetching clients with projects', error);
       throw error;
     }
   }

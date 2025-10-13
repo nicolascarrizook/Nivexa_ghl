@@ -184,12 +184,16 @@ export function PaymentSelectionModal({
       if (paymentError) throw paymentError;
 
       // 2. Process payment to cash boxes
+      // Use the payment currency if specified, otherwise use project currency
+      const paymentCurrency = (confirmation.paymentCurrency || currency) as 'ARS' | 'USD';
+
       await newCashBoxService.processProjectPayment({
         organizationId: organizationId,
         projectId: projectId,
         amount: selectedInstallment.amount,
         description: `Pago cuota #${selectedInstallment.installment_number} - ${projectName}`,
         installmentId: selectedInstallment.id,
+        currency: paymentCurrency, // Use the actual payment currency
       });
 
       // 3. Create and collect administrative fee for this payment

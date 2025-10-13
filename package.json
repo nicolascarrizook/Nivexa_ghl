@@ -14,10 +14,14 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
     "test:watch": "vitest --watch",
+    "test:integration": "vitest run src/tests/integration",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "setup:auth": "node scripts/setup-auth.js",
-    "db:setup": "node scripts/setup-auth.js"
+    "db:setup": "node scripts/setup-auth.js",
+    "diagnose:cash": "npx tsx src/scripts/diagnose-cash-system.ts",
+    "diagnose:detailed": "npx tsx src/scripts/diagnose-detailed.ts",
+    "fix:cash": "npx tsx src/scripts/fix-master-cash.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

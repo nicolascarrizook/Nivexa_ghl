@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { InterProjectLoanService } from '@/services/InterProjectLoanService';
 import { BankAccountService } from '@/services/BankAccountService';
+import { newCashBoxService } from '@/services/cash/NewCashBoxService';
 import type { CreateLoanData, RegisterPaymentData } from '@/services/InterProjectLoanService';
 import type { CreateAccountData, TransferData } from '@/services/BankAccountService';
 
@@ -220,16 +221,25 @@ export const usePayFees = () => {
       description,
       notes,
     }: {
-      projectId: string;
+      projectId?: string; // Ahora es opcional
       amount: number;
       currency: 'ARS' | 'USD';
       description: string;
       notes?: string;
-    }) => BankAccountService.payFees(projectId, amount, currency, description, notes),
+    }) => newCashBoxService.collectAdminFeeManual({
+      amount,
+      currency,
+      description,
+      projectId, // Opcional, solo para tracking
+    }),
     onSuccess: () => {
+      // Invalidar queries relacionadas con las cajas
+      queryClient.invalidateQueries({ queryKey: ['master-cash'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-cash'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-movements'] });
+      // Mantener invalidación de queries legacy por compatibilidad
       queryClient.invalidateQueries({ queryKey: ['active-accounts'] });
       queryClient.invalidateQueries({ queryKey: ['accounts-balance'] });
-      queryClient.invalidateQueries({ queryKey: ['account-transfers'] });
       queryClient.invalidateQueries({ queryKey: ['account-statistics'] });
     },
   });

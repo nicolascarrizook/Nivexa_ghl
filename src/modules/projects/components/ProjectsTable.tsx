@@ -40,10 +40,10 @@ export function ProjectsTable({ projects, onEdit, onDelete, loading }: ProjectsT
   const navigate = useNavigate();
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, currency: 'ARS' | 'USD' = 'ARS') => {
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
-      currency: 'ARS',
+      currency: currency,
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
@@ -148,18 +148,29 @@ export function ProjectsTable({ projects, onEdit, onDelete, loading }: ProjectsT
       title: 'Presupuesto',
       sortable: true,
       align: 'right',
-      render: (value, record) => (
-        <div className="text-right">
-          <p className="text-sm font-medium text-gray-900">
-            {formatCurrency(value)}
-          </p>
-          {record.paid_amount && (
-            <p className="text-xs text-gray-500">
-              Pagado: {formatCurrency(record.paid_amount)}
-            </p>
-          )}
-        </div>
-      )
+      render: (value, record) => {
+        const currency = (record.currency as 'ARS' | 'USD') || 'ARS';
+        return (
+          <div className="text-right">
+            <div className="flex items-center justify-end gap-2 mb-1">
+              <Badge
+                variant={currency === 'USD' ? 'info' : 'default'}
+                size="sm"
+              >
+                {currency}
+              </Badge>
+              <p className="text-sm font-medium text-gray-900">
+                {formatCurrency(value, currency)}
+              </p>
+            </div>
+            {record.paid_amount && (
+              <p className="text-xs text-gray-500">
+                Pagado: {formatCurrency(record.paid_amount, currency)}
+              </p>
+            )}
+          </div>
+        );
+      }
     },
     {
       key: 'start_date',

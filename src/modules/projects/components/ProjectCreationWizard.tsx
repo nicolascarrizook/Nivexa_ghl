@@ -1,20 +1,22 @@
 import { Button } from "@/components/Button";
+import { supabase } from "@/config/supabase";
 import Modal from "@/design-system/components/feedback/Modal";
 import Input from "@/design-system/components/inputs/Input";
 import { SectionCard } from "@/design-system/components/layout/SectionCard";
 import { useCurrencyExchange } from "@/hooks/useCurrencyExchange";
-import { newCashBoxService } from "@/services/cash/NewCashBoxService";
 import { useClients } from "@/modules/clients/hooks/useClients";
 import {
   AlertCircle,
   Building2,
   Calendar,
   Check,
+  CheckCircle,
   ChevronRight,
   Clock,
   CreditCard,
   DollarSign,
   Edit,
+  Eye,
   FileText,
   Plus,
   Save,
@@ -26,8 +28,10 @@ import {
 import { useEffect, useState } from "react";
 import { GanttChart, type GanttStage } from "../../../components/GanttChart";
 import { GanttChartModal } from "../../../components/GanttChart/GanttChartModal";
+import { contractStorageService } from "../services/ContractStorageService";
 import { projectService } from "../services/ProjectService";
 import type { ProjectFormData, ProjectPhase } from "../types/project.types";
+import { ContractPreviewModal } from "./wizard/ContractPreviewModal";
 
 interface ProjectCreationWizardProps {
   isOpen: boolean;
@@ -80,6 +84,7 @@ export function ProjectCreationWizard({
     Partial<Record<keyof ProjectFormData, string>>
   >({});
   const [showGanttModal, setShowGanttModal] = useState(false);
+  const [showContractPreview, setShowContractPreview] = useState(false);
 
   // Currency exchange hook
   const {
@@ -151,6 +156,11 @@ export function ProjectCreationWizard({
     termsAccepted: false,
     dataAccuracyConfirmed: false,
     authorityConfirmed: false,
+
+    // Contract Signature
+    clientSignature: "",
+    signatureDate: "",
+    contractSigned: false,
   });
 
   // Auto-calculate related fields
@@ -235,6 +245,9 @@ export function ProjectCreationWizard({
         }
         break;
       case 5:
+        if (!formData.contractSigned)
+          (newErrors as any).contractSigned =
+            "Debe firmar el contrato antes de continuar";
         if (!formData.termsAccepted)
           newErrors.termsAccepted = "Debe aceptar los términos";
         if (!formData.dataAccuracyConfirmed)
@@ -285,14 +298,41 @@ export function ProjectCreationWizard({
     try {
       const result = await projectService.createProjectFromForm(formData);
       if (result) {
-        if (formData.downPaymentAmount > 0) {
-          await newCashBoxService.processProjectPayment({
-            projectId: result.id,
-            amount: formData.downPaymentAmount,
-            description: `Anticipo - ${formData.projectName}`,
-            installmentId: undefined,
-          });
+        // Generate and upload signed contract PDF
+        if (formData.contractSigned && result.id) {
+          try {
+            console.log("Generating and uploading signed contract PDF...");
+            const contractData = await contractStorageService.uploadContract(
+              result.id,
+              formData
+            );
+
+            // Update project metadata with contract information
+            await supabase
+              .from("projects")
+              .update({
+                metadata: {
+                  ...(result.metadata || {}),
+                  contract: {
+                    pdfPath: contractData.path,
+                    pdfUrl: contractData.url,
+                    signedBy: formData.clientSignature,
+                    signedAt: formData.signatureDate,
+                    generatedAt: new Date().toISOString(),
+                  },
+                },
+              })
+              .eq("id", result.id);
+
+            console.log("Contract PDF uploaded successfully:", contractData);
+          } catch (error) {
+            console.error("Error uploading contract PDF:", error);
+            // Don't fail the project creation if PDF upload fails
+          }
         }
+
+        // Note: Down payment is already processed by projectService.createProjectFromForm()
+        // including administrator fees
 
         onSuccess(result);
         resetForm();
@@ -343,6 +383,9 @@ export function ProjectCreationWizard({
       termsAccepted: false,
       dataAccuracyConfirmed: false,
       authorityConfirmed: false,
+      clientSignature: "",
+      signatureDate: "",
+      contractSigned: false,
     });
     setErrors({});
   };
@@ -409,7 +452,8 @@ export function ProjectCreationWizard({
     const filteredClients = clients.filter(
       (client) =>
         client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (client.email && client.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (client.email &&
+          client.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (client.tax_id && client.tax_id.includes(searchTerm))
     );
 
@@ -473,10 +517,10 @@ export function ProjectCreationWizard({
                             {client.name}
                           </p>
                           <p className="text-sm text-gray-500 mt-1">
-                            {client.email || 'Sin email'}
+                            {client.email || "Sin email"}
                           </p>
                           <p className="text-xs text-gray-400 mt-1">
-                            CUIT/DNI: {client.tax_id || 'N/A'}
+                            CUIT/DNI: {client.tax_id || "N/A"}
                           </p>
                         </div>
                         <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
@@ -1253,8 +1297,106 @@ export function ProjectCreationWizard({
     </div>
   );
 
+  const handleContractSign = (signatureData: {
+    clientSignature: string;
+    date: string;
+  }) => {
+    setFormData({
+      ...formData,
+      clientSignature: signatureData.clientSignature,
+      signatureDate: signatureData.date,
+      contractSigned: true,
+      termsAccepted: true, // Auto-accept terms when signing contract
+    });
+  };
+
   const renderSection5 = () => (
     <div className="space-y-6">
+      {/* Contract Preview and Signature */}
+      <SectionCard
+        title="Contrato del Proyecto"
+        icon={<FileText className="w-5 h-5" />}
+        subtitle="Revise y firme el contrato antes de crear el proyecto"
+      >
+        <div className="space-y-4 mt-6">
+          <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+            {formData.contractSigned ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-green-50 rounded-lg">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Contrato Firmado
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Firmado por:{" "}
+                      <span className="font-medium">
+                        {formData.clientSignature}
+                      </span>
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {formData.signatureDate
+                        ? new Date(formData.signatureDate).toLocaleDateString(
+                            "es-AR",
+                            {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }
+                          )
+                        : "-"}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => setShowContractPreview(true)}
+                  variant="ghost"
+                  size="sm"
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  Ver Contrato
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-yellow-50 rounded-lg">
+                    <AlertCircle className="w-5 h-5 text-yellow-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      Firma Pendiente
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Debe firmar el contrato para continuar
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => setShowContractPreview(true)}
+                  variant="primary"
+                  size="sm"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Firmar Contrato
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {(errors as any).contractSigned && (
+            <div className="flex items-center space-x-2 text-red-600 text-sm">
+              <AlertCircle className="w-4 h-4" />
+              <span>{(errors as any).contractSigned}</span>
+            </div>
+          )}
+        </div>
+      </SectionCard>
+
       {/* Project Summary */}
       <SectionCard
         title="Resumen del Proyecto"
@@ -1586,6 +1728,7 @@ export function ProjectCreationWizard({
                       size="sm"
                       disabled={
                         isSubmitting ||
+                        !formData.contractSigned ||
                         !formData.termsAccepted ||
                         !formData.dataAccuracyConfirmed
                       }
@@ -1615,6 +1758,14 @@ export function ProjectCreationWizard({
         onStageClick={(stage) => {
           console.log("Stage clicked:", stage);
         }}
+      />
+
+      {/* Contract Preview Modal */}
+      <ContractPreviewModal
+        isOpen={showContractPreview}
+        onClose={() => setShowContractPreview(false)}
+        formData={formData}
+        onSign={handleContractSign}
       />
     </>
   );

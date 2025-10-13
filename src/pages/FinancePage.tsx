@@ -39,14 +39,19 @@ import {
 } from '@/components/ui/breadcrumb';
 
 interface FinancialSummary {
-  masterBalance: number;
-  adminBalance: number;
-  totalProjectsBalance: number;
-  totalSystemBalance: number;
+  masterBalanceARS: number;
+  masterBalanceUSD: number;
+  adminBalanceARS: number;
+  adminBalanceUSD: number;
+  totalProjectsBalanceARS: number;
+  totalProjectsBalanceUSD: number;
   pendingFeesCount: number;
   pendingFeesTotal: number;
-  monthlyIncome: number;
-  monthlyExpenses: number;
+  monthlyIncomeARS: number;
+  monthlyIncomeUSD: number;
+  monthlyExpensesARS: number;
+  monthlyExpensesUSD: number;
+  projectsCount: number;
 }
 
 interface QuickAction {
@@ -62,14 +67,19 @@ export function FinancePage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary>({
-    masterBalance: 0,
-    adminBalance: 0,
-    totalProjectsBalance: 0,
-    totalSystemBalance: 0,
+    masterBalanceARS: 0,
+    masterBalanceUSD: 0,
+    adminBalanceARS: 0,
+    adminBalanceUSD: 0,
+    totalProjectsBalanceARS: 0,
+    totalProjectsBalanceUSD: 0,
     pendingFeesCount: 0,
     pendingFeesTotal: 0,
-    monthlyIncome: 0,
-    monthlyExpenses: 0,
+    monthlyIncomeARS: 0,
+    monthlyIncomeUSD: 0,
+    monthlyExpensesARS: 0,
+    monthlyExpensesUSD: 0,
+    projectsCount: 0,
   });
   const [recentMovements, setRecentMovements] = useState<any[]>([]);
 
@@ -102,34 +112,20 @@ export function FinancePage() {
         movements = movs || [];
       }
 
-      // Calculate monthly stats
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthlyMovements = movements.filter(
-        (m) => new Date(m.created_at) >= startOfMonth
-      );
-
-      const monthlyIncome = monthlyMovements
-        .filter(
-          (m) =>
-            m.movement_type === "project_income" ||
-            m.movement_type === "project_payment"
-        )
-        .reduce((sum, m) => sum + m.amount, 0);
-
-      const monthlyExpenses = monthlyMovements
-        .filter((m) => m.movement_type === "operational_expense")
-        .reduce((sum, m) => sum + Math.abs(m.amount), 0);
-
       setFinancialSummary({
-        masterBalance: summary.masterBalance,
-        adminBalance: summary.adminBalance,
-        totalProjectsBalance: summary.projectsTotal,
-        totalSystemBalance: summary.masterBalance,
+        masterBalanceARS: summary.masterBalanceARS,
+        masterBalanceUSD: summary.masterBalanceUSD,
+        adminBalanceARS: summary.adminBalanceARS,
+        adminBalanceUSD: summary.adminBalanceUSD,
+        totalProjectsBalanceARS: summary.projectsTotalARS,
+        totalProjectsBalanceUSD: summary.projectsTotalUSD,
         pendingFeesCount: pendingFees.length,
         pendingFeesTotal: pendingTotal,
-        monthlyIncome,
-        monthlyExpenses,
+        monthlyIncomeARS: summary.monthlyIncomeARS,
+        monthlyIncomeUSD: summary.monthlyIncomeUSD,
+        monthlyExpensesARS: summary.monthlyExpensesARS,
+        monthlyExpensesUSD: summary.monthlyExpensesUSD,
+        projectsCount: summary.projectsCount,
       });
 
       setRecentMovements(movements.slice(0, 5));
@@ -140,14 +136,12 @@ export function FinancePage() {
     }
   };
 
-  const currency: Currency = "ARS";
-
   const quickActions: QuickAction[] = [
     {
-      id: "collect-fees",
-      label: "Cobrar Honorarios",
-      icon: <PiggyBank className="h-5 w-5" />,
-      description: "Transferir honorarios a caja admin",
+      id: "view-master-cash",
+      label: "Caja Maestra",
+      icon: <Wallet className="h-5 w-5" />,
+      description: "Ver movimientos y balances",
       onClick: () => navigate("/finance/master-cash"),
       variant: "primary",
     },
@@ -231,15 +225,27 @@ export function FinancePage() {
 
   const cashBoxData = [
     {
-      id: "master",
-      name: "Caja Maestra",
-      balance: financialSummary.masterBalance,
+      id: "master-ars",
+      name: "Caja Maestra (ARS)",
+      balance: financialSummary.masterBalanceARS,
       path: "/finance/master-cash",
     },
     {
-      id: "admin",
-      name: "Caja Administrativa",
-      balance: financialSummary.adminBalance,
+      id: "master-usd",
+      name: "Caja Maestra (USD)",
+      balance: financialSummary.masterBalanceUSD,
+      path: "/finance/master-cash",
+    },
+    {
+      id: "admin-ars",
+      name: "Caja Admin (ARS)",
+      balance: financialSummary.adminBalanceARS,
+      path: "/finance/admin-cash",
+    },
+    {
+      id: "admin-usd",
+      name: "Caja Admin (USD)",
+      balance: financialSummary.adminBalanceUSD,
       path: "/finance/admin-cash",
     },
   ];
@@ -392,32 +398,60 @@ export function FinancePage() {
             metrics={
               [
                 {
-                  title: 'Balance Total',
-                  value: formatCurrency(financialSummary.totalSystemBalance),
+                  title: 'Balance Master Cash (ARS)',
+                  value: formatCurrency(financialSummary.masterBalanceARS),
                   icon: DollarSign,
-                  description: 'Sistema',
+                  description: 'Pesos',
                   variant: 'default',
                 },
                 {
-                  title: 'Ingresos del Mes',
-                  value: `+${formatCurrency(financialSummary.monthlyIncome)}`,
+                  title: 'Balance Master Cash (USD)',
+                  value: `U$S ${financialSummary.masterBalanceUSD.toFixed(2)}`,
+                  icon: DollarSign,
+                  description: 'Dólares',
+                  variant: 'default',
+                },
+                {
+                  title: 'Ingresos del Mes (ARS)',
+                  value: `+${formatCurrency(financialSummary.monthlyIncomeARS)}`,
                   icon: TrendingUp,
-                  description: 'Mes',
+                  description: 'Pesos',
                   variant: 'success',
                 },
                 {
-                  title: 'Gastos del Mes',
-                  value: `-${formatCurrency(financialSummary.monthlyExpenses)}`,
+                  title: 'Ingresos del Mes (USD)',
+                  value: `+U$S ${financialSummary.monthlyIncomeUSD.toFixed(2)}`,
+                  icon: TrendingUp,
+                  description: 'Dólares',
+                  variant: 'success',
+                },
+                {
+                  title: 'Gastos del Mes (ARS)',
+                  value: `-${formatCurrency(financialSummary.monthlyExpensesARS)}`,
                   icon: TrendingDown,
-                  description: 'Mes',
+                  description: 'Pesos',
                   variant: 'error',
                 },
                 {
-                  title: 'Honorarios Pendientes',
-                  value: formatCurrency(financialSummary.pendingFeesTotal),
-                  icon: Clock,
-                  description: `${financialSummary.pendingFeesCount} pendientes`,
-                  variant: 'warning',
+                  title: 'Gastos del Mes (USD)',
+                  value: `-U$S ${financialSummary.monthlyExpensesUSD.toFixed(2)}`,
+                  icon: TrendingDown,
+                  description: 'Dólares',
+                  variant: 'error',
+                },
+                {
+                  title: 'Total Proyectos (ARS)',
+                  value: formatCurrency(financialSummary.totalProjectsBalanceARS),
+                  icon: Wallet,
+                  description: `${financialSummary.projectsCount} proyectos`,
+                  variant: 'default',
+                },
+                {
+                  title: 'Total Proyectos (USD)',
+                  value: `U$S ${financialSummary.totalProjectsBalanceUSD.toFixed(2)}`,
+                  icon: Wallet,
+                  description: `${financialSummary.projectsCount} proyectos`,
+                  variant: 'default',
                 },
               ] as StatCardProps[]
             }

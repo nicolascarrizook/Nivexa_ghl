@@ -36,11 +36,15 @@ export interface MasterCash {
 export interface ProjectCash {
   id: string;
   project_id: string;
-  balance: number; // Legacy field, kept for backward compatibility
-  balance_ars: number; // Balance in Argentine Pesos
-  balance_usd: number; // Balance in US Dollars
-  total_received: number;
-  last_movement_at?: string;
+  current_balance_ars: number; // Balance in Argentine Pesos
+  current_balance_usd: number; // Balance in US Dollars
+  total_income_ars: number; // Total income in ARS
+  total_income_usd: number; // Total income in USD
+  total_expenses_ars: number; // Total expenses in ARS
+  total_expenses_usd: number; // Total expenses in USD
+  budget_allocated_ars: number; // Budget allocated in ARS
+  budget_allocated_usd: number; // Budget allocated in USD
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -132,7 +136,7 @@ class NewCashBoxService {
 
   async getProjectCash(projectId: string): Promise<ProjectCash | null> {
     const { data, error } = await supabase
-      .from('project_cash')
+      .from('project_cash_box')
       .select('*')
       .eq('project_id', projectId)
       .single();
@@ -147,18 +151,24 @@ class NewCashBoxService {
 
   async createProjectCash(projectId: string): Promise<ProjectCash> {
     const { data, error } = await supabase
-      .from('project_cash')
+      .from('project_cash_box')
       .insert({
         project_id: projectId,
-        balance: 0,
-        total_received: 0,
-        total_spent: 0
+        current_balance_ars: 0,
+        current_balance_usd: 0,
+        total_income_ars: 0,
+        total_income_usd: 0,
+        total_expenses_ars: 0,
+        total_expenses_usd: 0,
+        budget_allocated_ars: 0,
+        budget_allocated_usd: 0,
+        is_active: true
       })
       .select()
       .single();
 
     if (error) {
-      console.error('Error creating project cash:', error);
+      console.error('Error creating project cash box:', error);
       throw error;
     }
 
@@ -323,17 +333,21 @@ class NewCashBoxService {
     amount: number;
     description: string;
     installmentId?: string;
+    currency?: Currency; // Add currency parameter (defaults to ARS)
   }): Promise<void> {
     try {
-      // Get project cash
+      const currency = params.currency || 'ARS'; // Default to ARS for backward compatibility
+
+      // Get project cash box
       const { data: projectCash, error: projectCashError } = await supabase
-        .from('project_cash')
+        .from('project_cash_box')
         .select('*')
         .eq('project_id', params.projectId)
         .single();
 
       if (projectCashError || !projectCash) {
-        console.error('Project cash not found');
+        console.error('Project cash box not found for project:', params.projectId);
+        console.error('Error:', projectCashError);
         return;
       }
 
@@ -357,6 +371,7 @@ class NewCashBoxService {
           description: params.description,
           project_id: params.projectId,
           installment_id: params.installmentId || null,
+          metadata: { currency },
         },
         // Internal control record in master cash (NOT a new income)
         {
@@ -369,6 +384,7 @@ class NewCashBoxService {
           description: `Control financiero - ${params.description}`,
           project_id: params.projectId,
           installment_id: params.installmentId || null,
+          metadata: { currency },
         }
       ];
 
@@ -382,29 +398,55 @@ class NewCashBoxService {
         throw movementError;
       }
 
-      // Update balances
-      await Promise.all([
-        // Update project cash
-        supabase
-          .from('project_cash')
-          .update({
-            balance: projectCash.balance + params.amount,
-            total_received: projectCash.total_received + params.amount,
-            last_movement_at: new Date().toISOString()
-          })
-          .eq('id', projectCash.id),
+      // Update balances based on currency
+      if (currency === 'ARS') {
+        await Promise.all([
+          // Update project cash box (ARS)
+          supabase
+            .from('project_cash_box')
+            .update({
+              current_balance_ars: projectCash.current_balance_ars + params.amount,
+              total_income_ars: projectCash.total_income_ars + params.amount,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', projectCash.id),
 
-        // Update master cash
-        supabase
-          .from('master_cash')
-          .update({
-            balance: masterCash.balance + params.amount,
-            last_movement_at: new Date().toISOString()
-          })
-          .eq('id', masterCash.id)
-      ]);
+          // Update master cash (ARS)
+          supabase
+            .from('master_cash')
+            .update({
+              balance: (masterCash.balance || 0) + params.amount, // Legacy total
+              balance_ars: (masterCash.balance_ars || 0) + params.amount,
+              last_movement_at: new Date().toISOString()
+            })
+            .eq('id', masterCash.id)
+        ]);
+      } else {
+        // USD payment
+        await Promise.all([
+          // Update project cash box (USD)
+          supabase
+            .from('project_cash_box')
+            .update({
+              current_balance_usd: projectCash.current_balance_usd + params.amount,
+              total_income_usd: projectCash.total_income_usd + params.amount,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', projectCash.id),
 
-      console.log(`✅ Payment processed: ${params.amount} - ONE income recorded in TWO cash boxes`);
+          // Update master cash (USD)
+          supabase
+            .from('master_cash')
+            .update({
+              balance: (masterCash.balance || 0) + params.amount, // Legacy total
+              balance_usd: (masterCash.balance_usd || 0) + params.amount,
+              last_movement_at: new Date().toISOString()
+            })
+            .eq('id', masterCash.id)
+        ]);
+      }
+
+      console.log(`✅ Payment processed: ${params.amount} ${currency} - ONE income recorded in TWO cash boxes`);
     } catch (error) {
       console.error('Error processing payment:', error);
       throw error;
@@ -428,7 +470,7 @@ class NewCashBoxService {
 
       // Get project cash
       const { data: projectCash, error: projectCashError } = await supabase
-        .from('project_cash')
+        .from('project_cash_box')
         .select('*')
         .eq('project_id', params.projectId)
         .single();
@@ -487,7 +529,7 @@ class NewCashBoxService {
           const arsConverted = usdNeeded * rate;
 
           await supabase
-            .from('project_cash')
+            .from('project_cash_box')
             .update({
               balance_usd: projectCash.balance_usd - usdNeeded,
               balance_ars: projectCash.balance_ars + arsConverted,
@@ -569,7 +611,7 @@ class NewCashBoxService {
         // Descontar pesos de project_cash y master_cash
         await Promise.all([
           supabase
-            .from('project_cash')
+            .from('project_cash_box')
             .update({
               balance_ars: projectCash.balance_ars - params.amount,
               balance: (projectCash.balance_usd * 1000) + (projectCash.balance_ars - params.amount), // Legacy total
@@ -592,7 +634,7 @@ class NewCashBoxService {
         // Descontar dólares de project_cash y master_cash
         await Promise.all([
           supabase
-            .from('project_cash')
+            .from('project_cash_box')
             .update({
               balance_usd: projectCash.balance_usd - params.amount,
               balance: ((projectCash.balance_usd - params.amount) * 1000) + projectCash.balance_ars, // Legacy total
@@ -642,14 +684,14 @@ class NewCashBoxService {
 
   private async updateProjectCashBalance(cashId: string, amount: number): Promise<void> {
     const { data: current } = await supabase
-      .from('project_cash')
+      .from('project_cash_box')
       .select('balance, total_received')
       .eq('id', cashId)
       .single();
 
     if (current) {
       await supabase
-        .from('project_cash')
+        .from('project_cash_box')
         .update({
           balance: current.balance + amount,
           total_received: amount > 0 ? current.total_received + amount : current.total_received,
@@ -679,38 +721,206 @@ class NewCashBoxService {
   }
 
   // ============================================
+  // ADMIN FEE COLLECTION (MANUAL)
+  // ============================================
+
+  /**
+   * Collect admin fee manually from Master Cash to Admin Cash
+   * This is used when the architect wants to manually withdraw fees
+   * Does NOT affect Project Cash (client doesn't see this operation)
+   */
+  async collectAdminFeeManual(params: {
+    amount: number;
+    currency: Currency;
+    description: string;
+    projectId?: string; // Optional, only for tracking/description
+  }): Promise<void> {
+    try {
+      const { amount, currency, description, projectId } = params;
+
+      // Get master cash
+      const masterCash = await this.getMasterCash();
+      if (!masterCash) {
+        throw new Error('Master cash not found');
+      }
+
+      // Get admin cash
+      const adminCash = await this.getAdminCash();
+      if (!adminCash) {
+        throw new Error('Admin cash not found');
+      }
+
+      // Check sufficient balance in correct currency
+      const currentBalance = currency === 'ARS'
+        ? (masterCash.balance_ars || 0)
+        : (masterCash.balance_usd || 0);
+
+      if (currentBalance < amount) {
+        throw new Error(
+          `Fondos insuficientes en Master Cash ${currency}. ` +
+          `Disponible: $${currentBalance.toFixed(2)}, Requerido: $${amount.toFixed(2)}`
+        );
+      }
+
+      // Create cash movement
+      const { error: movementError } = await supabase
+        .from('cash_movements')
+        .insert({
+          movement_type: 'admin_fee_collection',
+          source_type: 'master',
+          source_id: masterCash.id,
+          destination_type: 'admin',
+          destination_id: adminCash.id,
+          amount: amount,
+          description: description,
+          project_id: projectId || null,
+          metadata: { currency, manual: true },
+        });
+
+      if (movementError) {
+        console.error('Error creating movement:', movementError);
+        throw movementError;
+      }
+
+      // Update balances based on currency
+      if (currency === 'ARS') {
+        await Promise.all([
+          // Decrease master cash ARS
+          supabase
+            .from('master_cash')
+            .update({
+              balance: (masterCash.balance || 0) - amount, // Legacy total
+              balance_ars: (masterCash.balance_ars || 0) - amount,
+              last_movement_at: new Date().toISOString()
+            })
+            .eq('id', masterCash.id),
+
+          // Increase admin cash (legacy field only for now)
+          supabase
+            .from('admin_cash')
+            .update({
+              balance: (adminCash.balance || 0) + amount,
+              total_collected: (adminCash.total_collected || 0) + amount,
+              last_movement_at: new Date().toISOString()
+            })
+            .eq('id', adminCash.id)
+        ]);
+      } else {
+        // USD
+        await Promise.all([
+          // Decrease master cash USD
+          supabase
+            .from('master_cash')
+            .update({
+              balance: (masterCash.balance || 0) - amount, // Legacy total
+              balance_usd: (masterCash.balance_usd || 0) - amount,
+              last_movement_at: new Date().toISOString()
+            })
+            .eq('id', masterCash.id),
+
+          // Increase admin cash (legacy field only for now)
+          supabase
+            .from('admin_cash')
+            .update({
+              balance: (adminCash.balance || 0) + amount,
+              total_collected: (adminCash.total_collected || 0) + amount,
+              last_movement_at: new Date().toISOString()
+            })
+            .eq('id', adminCash.id)
+        ]);
+      }
+
+      console.log(`✅ Admin fee collected manually: ${amount} ${currency} from Master Cash → Admin Cash`);
+    } catch (error) {
+      console.error('Error collecting admin fee:', error);
+      throw error;
+    }
+  }
+
+  // ============================================
   // DASHBOARD SUMMARY
   // ============================================
 
   async getDashboardSummary(organizationId?: string): Promise<{
-    masterBalance: number;
-    adminBalance: number;
+    masterBalanceARS: number;
+    masterBalanceUSD: number;
+    adminBalanceARS: number;
+    adminBalanceUSD: number;
     projectsCount: number;
-    projectsTotal: number;
+    projectsTotalARS: number;
+    projectsTotalUSD: number;
+    monthlyIncomeARS: number;
+    monthlyIncomeUSD: number;
+    monthlyExpensesARS: number;
+    monthlyExpensesUSD: number;
   }> {
     try {
       const master = await this.getMasterCash();
       const admin = await this.getAdminCash();
-      
-      const { data: projects } = await supabase
-        .from('project_cash')
-        .select('balance');
 
-      const projectsTotal = projects?.reduce((sum, p) => sum + (p.balance || 0), 0) || 0;
+      const { data: projects } = await supabase
+        .from('project_cash_box')
+        .select('current_balance_ars, current_balance_usd');
+
+      const projectsTotalARS = projects?.reduce((sum, p) => sum + (p.current_balance_ars || 0), 0) || 0;
+      const projectsTotalUSD = projects?.reduce((sum, p) => sum + (p.current_balance_usd || 0), 0) || 0;
+
+      // Calculate monthly income and expenses
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const { data: movements } = await supabase
+        .from('cash_movements')
+        .select('*')
+        .gte('created_at', startOfMonth.toISOString());
+
+      const monthlyIncomeARS = movements?.filter(m =>
+        (m.movement_type === 'project_income' || m.movement_type === 'project_payment') &&
+        m.metadata?.currency === 'ARS'
+      ).reduce((sum, m) => sum + m.amount, 0) || 0;
+
+      const monthlyIncomeUSD = movements?.filter(m =>
+        (m.movement_type === 'project_income' || m.movement_type === 'project_payment') &&
+        m.metadata?.currency === 'USD'
+      ).reduce((sum, m) => sum + m.amount, 0) || 0;
+
+      const monthlyExpensesARS = movements?.filter(m =>
+        m.movement_type === 'operational_expense' &&
+        m.metadata?.currency === 'ARS'
+      ).reduce((sum, m) => sum + Math.abs(m.amount), 0) || 0;
+
+      const monthlyExpensesUSD = movements?.filter(m =>
+        m.movement_type === 'operational_expense' &&
+        m.metadata?.currency === 'USD'
+      ).reduce((sum, m) => sum + Math.abs(m.amount), 0) || 0;
 
       return {
-        masterBalance: master?.balance || 0,
-        adminBalance: admin?.balance || 0,
+        masterBalanceARS: master?.balance_ars || 0,
+        masterBalanceUSD: master?.balance_usd || 0,
+        adminBalanceARS: admin?.balance_ars || 0,
+        adminBalanceUSD: admin?.balance_usd || 0,
         projectsCount: projects?.length || 0,
-        projectsTotal
+        projectsTotalARS,
+        projectsTotalUSD,
+        monthlyIncomeARS,
+        monthlyIncomeUSD,
+        monthlyExpensesARS,
+        monthlyExpensesUSD,
       };
     } catch (error) {
       console.error('Error getting dashboard summary:', error);
       return {
-        masterBalance: 0,
-        adminBalance: 0,
+        masterBalanceARS: 0,
+        masterBalanceUSD: 0,
+        adminBalanceARS: 0,
+        adminBalanceUSD: 0,
         projectsCount: 0,
-        projectsTotal: 0
+        projectsTotalARS: 0,
+        projectsTotalUSD: 0,
+        monthlyIncomeARS: 0,
+        monthlyIncomeUSD: 0,
+        monthlyExpensesARS: 0,
+        monthlyExpensesUSD: 0,
       };
     }
   }

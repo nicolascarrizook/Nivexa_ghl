@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { clientService } from '../services/ClientService';
+import { clientService, type ClientWithProjects } from '../services/ClientService';
 import type { Database } from '@/types/database.types';
 import { toast } from '@/hooks/useToast';
 
@@ -8,12 +8,13 @@ type ClientInsert = Omit<Database['public']['Tables']['clients']['Insert'], 'id'
 
 interface UseClientsOptions {
   autoLoad?: boolean;
+  includeProjects?: boolean;
 }
 
 export function useClients(options: UseClientsOptions = {}) {
-  const { autoLoad = false } = options;
+  const { autoLoad = false, includeProjects = false } = options;
 
-  const [clients, setClients] = useState<Client[]>([]);
+  const [clients, setClients] = useState<ClientWithProjects[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -24,7 +25,9 @@ export function useClients(options: UseClientsOptions = {}) {
     setError(null);
 
     try {
-      const data = await clientService.getAllClients();
+      const data = includeProjects
+        ? await clientService.getAllClientsWithProjects()
+        : await clientService.getAllClients() as ClientWithProjects[];
       setClients(data);
       setError(null);
     } catch (err) {
@@ -34,7 +37,7 @@ export function useClients(options: UseClientsOptions = {}) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [includeProjects]);
 
   // Create a new client
   const createClient = useCallback(async (clientData: ClientInsert): Promise<Client | null> => {

@@ -65,13 +65,13 @@ export function ClientsPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  // Fetch clients from Supabase
+  // Fetch clients from Supabase with project statistics
   const {
     clients: allClients,
     isLoading,
-    refetch,
+    loadClients,
     deleteClient,
-  } = useClients({ autoLoad: true });
+  } = useClients({ autoLoad: true, includeProjects: true });
 
   // Convert database clients to display format
   const displayClients = useMemo(() => {
@@ -84,10 +84,10 @@ export function ClientsPage() {
       phone: client.phone || "",
       company: client.name, // Using name as company for now
       clientType: "individual" as const, // Default type
-      status: "active" as const, // Default status
-      activeProjects: 0, // TODO: Calculate from projects
-      totalProjects: 0, // TODO: Calculate from projects
-      totalRevenue: 0, // TODO: Calculate from projects
+      status: client.active_projects && client.active_projects > 0 ? "active" : "inactive" as const,
+      activeProjects: client.active_projects || 0,
+      totalProjects: client.total_projects || 0,
+      totalRevenue: (client.total_revenue_ars || 0) + (client.total_revenue_usd || 0), // Simplified for now
       lastActivity: client.updated_at || client.created_at,
       createdAt: client.created_at,
     }));
@@ -158,9 +158,10 @@ export function ClientsPage() {
     setIsCreateModalOpen(true);
   };
 
-  const handleClientCreated = () => {
-    // El hook useClients ya actualiza la lista automáticamente
-    // Solo necesitamos cerrar el modal
+  const handleClientCreated = async () => {
+    // Recargar la lista de clientes desde Supabase
+    await loadClients();
+    // Cerrar el modal
     setIsCreateModalOpen(false);
   };
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Home,
@@ -26,9 +26,12 @@ import type { StatCardProps } from '@/design-system/components/data-display/Stat
 import { SectionCard } from '@/design-system/components/layout';
 import { EmptyState } from '@/design-system/components/feedback';
 
+// Services
+import { newCashBoxService } from '@/services/cash/NewCashBoxService';
+import type { MasterCash, CashMovement } from '@/services/cash/NewCashBoxService';
+
 // Hooks
 import {
-  useAccountStatistics,
   useLoanStatistics,
   useActiveLoans,
   useOverdueInstallments,
@@ -39,26 +42,54 @@ import { formatCurrency } from '@/utils/formatters';
 // Components
 import { CreateLoanModal } from '@/modules/master-cash/components/CreateLoanModal';
 import { LoansDataTable } from '@/modules/master-cash/components/LoansDataTable';
-import { PayFeesModal } from '@/modules/master-cash/components/PayFeesModal';
 import { TransferModal } from '@/modules/master-cash/components/TransferModal';
 import { AuditTrailTable } from '@/modules/master-cash/components/AuditTrailTable';
 
 export function MasterCashPage() {
   const [isCreateLoanModalOpen, setIsCreateLoanModalOpen] = useState(false);
-  const [isPayFeesModalOpen, setIsPayFeesModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
 
+  // Cash Box data (replaces accountStats)
+  const [masterCash, setMasterCash] = useState<MasterCash | null>(null);
+  const [movements, setMovements] = useState<CashMovement[]>([]);
+  const [isLoadingCash, setIsLoadingCash] = useState(true);
+
   // Data fetching
-  const { data: accountStats, isLoading: accountsLoading, refetch: refetchAccounts } = useAccountStatistics();
   const { data: loanStats, isLoading: loansLoading, refetch: refetchLoans } = useLoanStatistics();
   const { data: activeLoans, isLoading: activeLoansLoading } = useActiveLoans();
   const { data: overdueInstallments } = useOverdueInstallments();
   const { data: masterAccounts } = useMasterAccounts();
 
-  const isLoading = accountsLoading || loansLoading;
+  const isLoading = isLoadingCash || loansLoading;
+
+  // Load master cash data
+  const loadData = async () => {
+    try {
+      setIsLoadingCash(true);
+      const masterCashData = await newCashBoxService.getMasterCash();
+      setMasterCash(masterCashData);
+
+      if (masterCashData) {
+        const movementsData = await newCashBoxService.getCashMovements(
+          'master',
+          masterCashData.id,
+          50
+        );
+        setMovements(movementsData);
+      }
+    } catch (error) {
+      console.error('Error loading master cash:', error);
+    } finally {
+      setIsLoadingCash(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const handleRefresh = () => {
-    refetchAccounts();
+    loadData();
     refetchLoans();
   };
 
@@ -119,13 +150,6 @@ export function MasterCashPage() {
                 Transferir
               </button>
               <button
-                onClick={() => setIsPayFeesModalOpen(true)}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-              >
-                <FileText className="h-4 w-4 mr-2" />
-                Pagar Honorarios
-              </button>
-              <button
                 onClick={() => setIsCreateLoanModalOpen(true)}
                 className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
               >
@@ -144,19 +168,17 @@ export function MasterCashPage() {
             [
               {
                 title: 'Caja Maestra ARS',
-                value: formatCurrency(accountStats?.masterBalanceARS || 0),
+                value: formatCurrency(masterCash?.balance_ars || 0),
                 icon: Wallet,
                 description: 'Balance en pesos argentinos',
                 variant: 'default',
-                trend: { value: 15, isPositive: true },
               },
               {
                 title: 'Caja Maestra USD',
-                value: `USD ${(accountStats?.masterBalanceUSD || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                value: `USD ${(masterCash?.balance_usd || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
                 icon: DollarSign,
                 description: 'Balance en dólares',
                 variant: 'default',
-                trend: { value: 8, isPositive: true },
               },
               {
                 title: 'Préstamos Activos',
@@ -164,7 +186,6 @@ export function MasterCashPage() {
                 icon: TrendingUp,
                 description: `${loanStats?.totalOverdue || 0} vencidos`,
                 variant: (loanStats?.totalOverdue || 0) > 0 ? 'warning' : 'default',
-                trend: { value: 3, isPositive: false },
               },
               {
                 title: 'Saldo Pendiente',
@@ -172,7 +193,6 @@ export function MasterCashPage() {
                 icon: AlertCircle,
                 description: `USD ${(loanStats?.totalOutstandingUSD || 0).toLocaleString('en-US')}`,
                 variant: 'default',
-                trend: { value: 12, isPositive: false },
               },
             ] as StatCardProps[]
           }
@@ -290,11 +310,6 @@ export function MasterCashPage() {
       <CreateLoanModal
         isOpen={isCreateLoanModalOpen}
         onClose={() => setIsCreateLoanModalOpen(false)}
-      />
-
-      <PayFeesModal
-        isOpen={isPayFeesModalOpen}
-        onClose={() => setIsPayFeesModalOpen(false)}
       />
 
       <TransferModal

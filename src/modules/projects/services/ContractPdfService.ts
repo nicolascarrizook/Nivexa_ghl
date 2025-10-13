@@ -326,14 +326,33 @@ class ContractPdfService {
   async generatePDF(formData: ProjectFormData): Promise<Blob> {
     const htmlContent = this.generateContractHTML(formData);
 
-    // Create a temporary element to render the HTML
-    const element = document.createElement('div');
-    element.innerHTML = htmlContent;
-    element.style.position = 'absolute';
-    element.style.left = '-9999px';
-    document.body.appendChild(element);
+    // Create an isolated iframe to avoid Tailwind CSS interference
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.left = '-9999px';
+    iframe.style.width = '210mm'; // A4 width
+    iframe.style.height = '297mm'; // A4 height
+    document.body.appendChild(iframe);
 
     try {
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) {
+        throw new Error('Could not access iframe document');
+      }
+
+      // Write the HTML content to the iframe (completely isolated from parent styles)
+      iframeDoc.open();
+      iframeDoc.write(htmlContent);
+      iframeDoc.close();
+
+      // Wait for iframe to load
+      await new Promise(resolve => {
+        if (iframe.contentWindow) {
+          iframe.contentWindow.addEventListener('load', resolve);
+        }
+        setTimeout(resolve, 100); // Fallback timeout
+      });
+
       const opt = {
         margin: 0,
         filename: `contrato-${formData.projectName?.replace(/\s+/g, '-') || 'proyecto'}.pdf`,
@@ -341,7 +360,9 @@ class ContractPdfService {
         html2canvas: {
           scale: 2,
           useCORS: true,
-          letterRendering: true
+          letterRendering: true,
+          windowWidth: 794, // A4 width in pixels at 96 DPI
+          windowHeight: 1123, // A4 height in pixels at 96 DPI
         },
         jsPDF: {
           unit: 'mm',
@@ -350,11 +371,11 @@ class ContractPdfService {
         }
       };
 
-      const pdf = await html2pdf().set(opt).from(element).output('blob');
+      const pdf = await html2pdf().set(opt).from(iframeDoc.body).output('blob');
       return pdf;
     } finally {
       // Clean up
-      document.body.removeChild(element);
+      document.body.removeChild(iframe);
     }
   }
 

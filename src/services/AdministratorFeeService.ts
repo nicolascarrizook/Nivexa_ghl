@@ -277,12 +277,17 @@ export class AdministratorFeeService {
         return false;
       }
 
-      // Get fee amount
+      // Get fee amount and currency
       const feeAmount = fee.amount || 0;
-      
-      // Check if master cash has sufficient balance
-      if (masterCash.balance < feeAmount) {
-        console.error('Insufficient balance in master cash for fee collection');
+      const feeCurrency = fee.currency || 'ARS';
+
+      // Check if master cash has sufficient balance for the currency
+      const masterBalance = feeCurrency === 'USD'
+        ? (masterCash.balance_usd || 0)
+        : (masterCash.balance_ars || 0);
+
+      if (masterBalance < feeAmount) {
+        console.error(`Insufficient balance in master cash (${feeCurrency}) for fee collection. Balance: ${masterBalance}, Required: ${feeAmount}`);
         return false;
       }
 
@@ -297,7 +302,7 @@ export class AdministratorFeeService {
       const { error: movementError } = await supabase
         .from('cash_movements')
         .insert({
-          movement_type: 'admin_fee_collection',
+          movement_type: 'fee_collection',
           source_type: 'master',
           source_id: masterCash.id,
           destination_type: 'admin',
@@ -305,6 +310,7 @@ export class AdministratorFeeService {
           amount: feeAmount,
           description: `Cobro de honorarios administrativos - Proyecto ${fee.project_id}`,
           project_id: fee.project_id,
+          metadata: { currency: feeCurrency }, // Store currency in metadata
         });
 
       if (movementError) {
@@ -312,27 +318,61 @@ export class AdministratorFeeService {
         return false;
       }
 
-      // Update cash box balances
-      const updatePromises = [
-        // Reduce master cash balance
-        supabase
-          .from('master_cash')
-          .update({
-            balance: masterCash.balance - feeAmount,
-            last_movement_at: new Date().toISOString(),
-          })
-          .eq('id', masterCash.id),
-        
-        // Increase admin cash balance
-        supabase
-          .from('admin_cash')
-          .update({
-            balance: adminCash.balance + feeAmount,
-            last_movement_at: new Date().toISOString(),
-          })
-          .eq('id', adminCash.id),
-        
-        // Mark fee as collected
+      // Update cash box balances based on currency
+      const updatePromises = [];
+
+      if (feeCurrency === 'USD') {
+        // Update USD balances
+        updatePromises.push(
+          // Reduce master cash balance (USD)
+          supabase
+            .from('master_cash')
+            .update({
+              balance_usd: (masterCash.balance_usd || 0) - feeAmount,
+              balance: (masterCash.balance || 0) - feeAmount, // Keep legacy field in sync
+              last_movement_at: new Date().toISOString(),
+            })
+            .eq('id', masterCash.id),
+
+          // Increase admin cash balance (USD)
+          supabase
+            .from('admin_cash')
+            .update({
+              balance_usd: (adminCash.balance_usd || 0) + feeAmount,
+              balance: (adminCash.balance || 0) + feeAmount, // Keep legacy field in sync
+              total_collected: (adminCash.total_collected || 0) + feeAmount,
+              last_movement_at: new Date().toISOString(),
+            })
+            .eq('id', adminCash.id)
+        );
+      } else {
+        // Update ARS balances
+        updatePromises.push(
+          // Reduce master cash balance (ARS)
+          supabase
+            .from('master_cash')
+            .update({
+              balance_ars: (masterCash.balance_ars || 0) - feeAmount,
+              balance: (masterCash.balance || 0) - feeAmount, // Keep legacy field in sync
+              last_movement_at: new Date().toISOString(),
+            })
+            .eq('id', masterCash.id),
+
+          // Increase admin cash balance (ARS)
+          supabase
+            .from('admin_cash')
+            .update({
+              balance_ars: (adminCash.balance_ars || 0) + feeAmount,
+              balance: (adminCash.balance || 0) + feeAmount, // Keep legacy field in sync
+              total_collected: (adminCash.total_collected || 0) + feeAmount,
+              last_movement_at: new Date().toISOString(),
+            })
+            .eq('id', adminCash.id)
+        );
+      }
+
+      // Mark fee as collected
+      updatePromises.push(
         supabase
           .from('administrator_fees')
           .update({
@@ -340,8 +380,8 @@ export class AdministratorFeeService {
             collected_at: new Date().toISOString(),
             collected_amount: feeAmount,
           })
-          .eq('id', feeId),
-      ];
+          .eq('id', feeId)
+      );
 
       const results = await Promise.all(updatePromises);
       const hasErrors = results.some(result => result.error);

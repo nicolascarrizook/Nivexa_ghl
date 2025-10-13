@@ -158,6 +158,34 @@ src/
 - [ ] Notificaciones de vencimientos
 - [ ] Exportación a Excel/PDF
 
+## 🔧 Herramientas de Diagnóstico
+
+### Scripts de Diagnóstico del Sistema de Cajas
+
+Si el dashboard muestra balances en $0 o tienes problemas con el flujo de cajas:
+
+```bash
+# Diagnóstico rápido
+npm run diagnose:cash
+
+# Diagnóstico detallado (recomendado)
+npm run diagnose:detailed
+
+# Reparación automática (si hay registros duplicados)
+npm run fix:cash
+
+# Tests de integración
+npm run test:integration
+```
+
+**¿Cuándo usar cada uno?**:
+- `diagnose:cash` - Chequeo rápido de estado general
+- `diagnose:detailed` - Análisis completo con soluciones SQL
+- `fix:cash` - Soluciona automáticamente registros duplicados
+- `test:integration` - Verifica el flujo completo de cajas
+
+Para más detalles, consulta **[CASH_SYSTEM_DEBUG.md](./CASH_SYSTEM_DEBUG.md)**.
+
 ## 📝 Notas de Desarrollo
 
 ### Reglas de Negocio

@@ -286,6 +286,9 @@ export function ProjectDetailsPage() {
     // You may want to set a specific installment to pay here
   };
 
+  // Get currency from project
+  const currency = (project?.currency as Currency) || 'ARS';
+
   // Define installments table columns
   const installmentColumns: Column[] = [
     {
@@ -309,7 +312,7 @@ export function ProjectDetailsPage() {
       align: "right",
       render: (value) => (
         <span className="text-sm font-medium text-gray-900">
-          {formatCurrency(value || 0)}
+          {formatCurrency(value || 0, currency)}
         </span>
       ),
     },
@@ -346,7 +349,7 @@ export function ProjectDetailsPage() {
       align: "right",
       render: (value) => (
         <span className="text-sm text-gray-600">
-          {formatCurrency(value || 0)}
+          {formatCurrency(value || 0, currency)}
         </span>
       ),
     },
@@ -769,16 +772,30 @@ export function ProjectDetailsPage() {
               metrics={
                 [
                   {
-                    title: "Presupuesto Total",
-                    value: formatCurrency(project.total_amount),
+                    title: `Presupuesto Total (${currency})`,
+                    value: formatCurrency(project.total_amount, currency),
                     icon: DollarSign,
                     description: "Valor total del proyecto",
                     variant: "default",
                     trend: { value: 0, isPositive: true },
                   },
                   {
-                    title: "Pagado",
-                    value: formatCurrency(project.paid_amount || 0),
+                    title: "Caja Proyecto ARS",
+                    value: formatCurrency(project.project_cash_box?.current_balance_ars || 0, 'ARS'),
+                    icon: DollarSign,
+                    description: `Total recibido: ${formatCurrency(project.project_cash_box?.total_income_ars || 0, 'ARS')}`,
+                    variant: "default",
+                  },
+                  {
+                    title: "Caja Proyecto USD",
+                    value: formatCurrency(project.project_cash_box?.current_balance_usd || 0, 'USD'),
+                    icon: DollarSign,
+                    description: `Total recibido: ${formatCurrency(project.project_cash_box?.total_income_usd || 0, 'USD')}`,
+                    variant: "default",
+                  },
+                  {
+                    title: `Pagado (${currency})`,
+                    value: formatCurrency(project.paid_amount || 0, currency),
                     icon: CheckCircle,
                     description: `${Math.round(
                       ((project.paid_amount || 0) / project.total_amount) * 100
@@ -793,8 +810,8 @@ export function ProjectDetailsPage() {
                     },
                   },
                   {
-                    title: "Pendiente",
-                    value: formatCurrency(pendingAmount),
+                    title: `Pendiente (${currency})`,
+                    value: formatCurrency(pendingAmount, currency),
                     icon: Clock,
                     description: "Por cobrar",
                     variant: pendingAmount > 0 ? "warning" : "success",
@@ -818,7 +835,7 @@ export function ProjectDetailsPage() {
                   },
                 ] as StatCardProps[]
               }
-              columns={4}
+              columns={3}
               gap="md"
               animated={!loading}
             />

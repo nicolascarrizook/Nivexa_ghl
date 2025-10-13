@@ -11,7 +11,6 @@ import type {
   CashMovement,
 } from "@/services/cash/NewCashBoxService";
 import { newCashBoxService } from "@/services/cash/NewCashBoxService";
-import type { Currency } from "@/services/CurrencyService";
 import { currencyService } from "@/services/CurrencyService";
 import {
   Activity,
@@ -24,6 +23,7 @@ import {
   DollarSign,
   FileText,
   Home,
+  Info,
   PiggyBank,
   RefreshCw,
   TrendingDown,
@@ -47,16 +47,14 @@ export function AdminCashPage() {
   const [adminCash, setAdminCash] = useState<AdminCash | null>(null);
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [collectedFees, setCollectedFees] = useState<AdministratorFee[]>([]);
-  const [pendingFees, setPendingFees] = useState<AdministratorFee[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [movementFilter, setMovementFilter] = useState<string>("all");
   const [monthlyStats, setMonthlyStats] = useState({
-    monthlyCollected: 0,
-    monthlyExpenses: 0,
-    totalPending: 0,
+    monthlyCollectedARS: 0,
+    monthlyCollectedUSD: 0,
+    monthlyExpensesARS: 0,
+    monthlyExpensesUSD: 0,
   });
-
-  const currency: Currency = "ARS";
 
   useEffect(() => {
     loadData();
@@ -78,61 +76,34 @@ export function AdminCashPage() {
           50
         );
 
-        // Calculate balance_after for each movement
-        // Movements come in descending order (newest first)
-        // So we work backwards from current balance
-        let runningBalance = adminCashData.balance;
-        const movementsWithBalance = movementsData.map((movement, index) => {
-          const balanceAfter = runningBalance;
-
-          // For next iteration (going backwards in time), reverse the transaction
-          if (movement.destination_id === adminCashData.id) {
-            // Money came into admin cash, so subtract it to get previous balance
-            runningBalance -= movement.amount;
-          } else if (movement.source_id === adminCashData.id) {
-            // Money went out of admin cash, so add it back to get previous balance
-            runningBalance += movement.amount;
-          }
-
-          return {
-            ...movement,
-            balance_after: balanceAfter
-          };
-        });
-
-        setMovements(movementsWithBalance);
+        setMovements(movementsData);
       }
 
-      // Get all administrator fees
-      const [pendingFeesData, collectedFeesData] = await Promise.all([
-        administratorFeeService.getPendingAdminFees(),
-        // Get collected fees for this month
-        supabase
-          .from("administrator_fees")
-          .select(
-            `
-            *,
-            projects!inner(
-              code,
-              name,
-              client_name
-            )
+      // Get collected fees for this month
+      const { data: collectedFeesData } = await supabase
+        .from("administrator_fees")
+        .select(
           `
+          *,
+          projects!inner(
+            code,
+            name,
+            client_name
           )
-          .eq("status", "collected")
-          .gte(
-            "collected_at",
-            new Date(
-              new Date().getFullYear(),
-              new Date().getMonth(),
-              1
-            ).toISOString()
-          )
-          .order("collected_at", { ascending: false }),
-      ]);
+        `
+        )
+        .eq("status", "collected")
+        .gte(
+          "collected_at",
+          new Date(
+            new Date().getFullYear(),
+            new Date().getMonth(),
+            1
+          ).toISOString()
+        )
+        .order("collected_at", { ascending: false });
 
-      setPendingFees(pendingFeesData);
-      setCollectedFees(collectedFeesData.data || []);
+      setCollectedFees(collectedFeesData || []);
 
       // Get projects for reference
       const { data: projectsData } = await supabase
@@ -154,29 +125,29 @@ export function AdminCashPage() {
         movementsData?.filter((m) => new Date(m.created_at) >= startOfMonth) ||
         [];
 
-      const monthlyCollected =
-        collectedFeesData.data?.reduce(
-          (sum, fee) => sum + (fee.collected_amount || 0),
-          0
-        ) || 0;
-      const monthlyExpenses = monthMovements
-        .filter((m) => m.movement_type === "operational_expense")
-        .reduce((sum, m) => sum + (m.amount || 0), 0);
-      const totalPending = pendingFeesData.reduce(
-        (sum, fee) => sum + (fee.amount || 0),
-        0
-      );
+      // Calculate monthly collected fees by currency
+      const monthlyCollectedARS =
+        collectedFeesData?.filter(f => f.currency === 'ARS')
+          .reduce((sum, fee) => sum + (fee.collected_amount || 0), 0) || 0;
 
-      console.log('Admin Cash Debug:', {
-        pendingFeesCount: pendingFeesData.length,
-        pendingFeesData: pendingFeesData.map(f => ({ id: f.id, amount: f.amount })),
-        totalPending
-      });
+      const monthlyCollectedUSD =
+        collectedFeesData?.filter(f => f.currency === 'USD')
+          .reduce((sum, fee) => sum + (fee.collected_amount || 0), 0) || 0;
+
+      // Calculate monthly expenses by currency
+      const monthlyExpensesARS = monthMovements
+        .filter((m) => m.movement_type === "operational_expense" && m.metadata?.currency === 'ARS')
+        .reduce((sum, m) => sum + (m.amount || 0), 0);
+
+      const monthlyExpensesUSD = monthMovements
+        .filter((m) => m.movement_type === "operational_expense" && m.metadata?.currency === 'USD')
+        .reduce((sum, m) => sum + (m.amount || 0), 0);
 
       setMonthlyStats({
-        monthlyCollected,
-        monthlyExpenses,
-        totalPending,
+        monthlyCollectedARS,
+        monthlyCollectedUSD,
+        monthlyExpensesARS,
+        monthlyExpensesUSD,
       });
     } catch (error) {
       console.error("Error loading admin cash data:", error);
@@ -187,7 +158,7 @@ export function AdminCashPage() {
 
   const getMovementIcon = (type: string) => {
     switch (type) {
-      case "transfer":
+      case "admin_fee_collection":
         return <ArrowUpRight className="h-4 w-4 text-green-600" />;
       case "operational_expense":
         return <ArrowDownRight className="h-4 w-4 text-red-600" />;
@@ -204,8 +175,8 @@ export function AdminCashPage() {
 
   const getMovementTypeLabel = (type: string) => {
     switch (type) {
-      case "transfer":
-        return "Transferencia de Honorarios";
+      case "admin_fee_collection":
+        return "Cobro de Honorarios";
       case "operational_expense":
         return "Gasto Operativo";
       case "salary_payment":
@@ -221,10 +192,10 @@ export function AdminCashPage() {
 
   const getMovementTypeBadge = (type: string) => {
     switch (type) {
-      case "transfer":
+      case "admin_fee_collection":
         return (
           <Badge variant="success" size="sm" className="text-xs px-2 py-0.5">
-            Ingreso
+            Honorario
           </Badge>
         );
       case "operational_expense":
@@ -299,7 +270,7 @@ export function AdminCashPage() {
       title: "Monto",
       align: "right" as const,
       render: (value: number, record: CashMovement) => {
-        // Money coming INTO admin cash is positive
+        const currency = record.metadata?.currency || 'ARS';
         const isPositive = record.destination_id === adminCash?.id;
         return (
           <span
@@ -308,20 +279,10 @@ export function AdminCashPage() {
             }`}
           >
             {isPositive ? "+" : "-"}
-            {currencyService.formatCurrency(value, "ARS")}
+            {currencyService.formatCurrency(value, currency)}
           </span>
         );
       },
-    },
-    {
-      key: "balance_after",
-      title: "Saldo",
-      align: "right" as const,
-      render: (value: number) => (
-        <span className="text-xs font-medium text-gray-900">
-          {currencyService.formatCurrency(value, "ARS")}
-        </span>
-      ),
     },
   ];
 
@@ -357,12 +318,19 @@ export function AdminCashPage() {
       ),
     },
     {
+      key: "currency",
+      title: "Moneda",
+      render: (value: string) => (
+        <span className="text-xs text-gray-900">{value}</span>
+      ),
+    },
+    {
       key: "collected_amount",
       title: "Monto",
       align: "right" as const,
-      render: (value: number) => (
+      render: (value: number, record: any) => (
         <span className="text-xs font-medium text-green-600">
-          {currencyService.formatCurrency(value, "ARS")}
+          {currencyService.formatCurrency(value, record.currency || 'ARS')}
         </span>
       ),
     },
@@ -412,7 +380,7 @@ export function AdminCashPage() {
                 Caja Administrativa
               </h1>
               <p className="mt-1 text-sm text-gray-500">
-                Gestión de honorarios personales y gastos administrativos
+                Honorarios personales cobrados automáticamente al recibir pagos de proyectos
               </p>
             </div>
             <div className="flex items-center space-x-3">
@@ -436,6 +404,22 @@ export function AdminCashPage() {
       </div>
 
       <div className="p-6">
+        {/* Info Banner */}
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-blue-600 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-blue-900">
+                Cobro Automático de Honorarios
+              </p>
+              <p className="text-xs text-blue-700 mt-1">
+                Los honorarios se cobran automáticamente cada vez que un proyecto recibe un pago.
+                El porcentaje configurado se transfiere desde la Caja Maestra hacia esta caja administrativa.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Balance Summary */}
         <SectionCard className="mb-6">
           <div className="border-b border-gray-200 px-6 py-4">
@@ -451,31 +435,52 @@ export function AdminCashPage() {
               metrics={
                 [
                   {
-                    title: 'Saldo Actual',
-                    value: currencyService.formatCurrency(adminCash?.balance || 0, currency),
+                    title: 'Saldo Actual (ARS)',
+                    value: currencyService.formatCurrency(adminCash?.balance_ars || 0, 'ARS'),
                     icon: Wallet,
-                    description: 'Caja Admin',
+                    description: 'Pesos',
                     variant: 'success',
                   },
                   {
-                    title: 'Cobrado en el Mes',
-                    value: currencyService.formatCurrency(monthlyStats.monthlyCollected, currency),
+                    title: 'Saldo Actual (USD)',
+                    value: `U$S ${(adminCash?.balance_usd || 0).toFixed(2)}`,
+                    icon: Wallet,
+                    description: 'Dólares',
+                    variant: 'success',
+                  },
+                  {
+                    title: 'Cobrado en el Mes (ARS)',
+                    value: currencyService.formatCurrency(monthlyStats.monthlyCollectedARS, 'ARS'),
                     icon: TrendingUp,
-                    description: `${collectedFees.length} cobros`,
+                    description: `${collectedFees.filter(f => f.currency === 'ARS').length} cobros`,
                     variant: 'info',
                   },
                   {
-                    title: 'Gastos del Mes',
-                    value: currencyService.formatCurrency(monthlyStats.monthlyExpenses, currency),
+                    title: 'Cobrado en el Mes (USD)',
+                    value: `U$S ${monthlyStats.monthlyCollectedUSD.toFixed(2)}`,
+                    icon: TrendingUp,
+                    description: `${collectedFees.filter(f => f.currency === 'USD').length} cobros`,
+                    variant: 'info',
+                  },
+                  {
+                    title: 'Gastos del Mes (ARS)',
+                    value: currencyService.formatCurrency(monthlyStats.monthlyExpensesARS, 'ARS'),
                     icon: TrendingDown,
                     description: 'Gastos operativos',
                     variant: 'warning',
                   },
                   {
-                    title: 'Total Cobrado',
-                    value: currencyService.formatCurrency(adminCash?.total_collected || 0, currency),
+                    title: 'Gastos del Mes (USD)',
+                    value: `U$S ${monthlyStats.monthlyExpensesUSD.toFixed(2)}`,
+                    icon: TrendingDown,
+                    description: 'Gastos operativos',
+                    variant: 'warning',
+                  },
+                  {
+                    title: 'Total Cobrado Histórico',
+                    value: currencyService.formatCurrency(adminCash?.total_collected || 0, 'ARS'),
                     icon: PiggyBank,
-                    description: 'Histórico',
+                    description: 'Todos los honorarios',
                     variant: 'default',
                   },
                 ] as StatCardProps[]
@@ -486,55 +491,6 @@ export function AdminCashPage() {
             />
           </div>
         </SectionCard>
-
-        {/* Pending Fees Section */}
-        {pendingFees.length > 0 && (
-          <SectionCard className="mb-6 p-0">
-            <div className="border-b border-gray-200 px-6 py-4">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="h-5 w-5 text-yellow-600" />
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-medium text-gray-900">
-                    Honorarios Pendientes de Cobro
-                  </h3>
-                  <Badge variant="warning" size="sm">
-                    {pendingFees.length}
-                  </Badge>
-                </div>
-              </div>
-              <p className="text-sm text-gray-600 mt-1">
-                {pendingFees.length} honorarios disponibles en Caja Maestra
-              </p>
-            </div>
-            <div className="px-6 py-6">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <div className="flex items-center gap-3">
-                  <AlertCircle className="h-5 w-5 text-yellow-600" />
-                  <div>
-                    <p className="text-sm font-medium text-yellow-800">
-                      Hay {pendingFees.length} honorarios pendientes por un
-                      total de{" "}
-                      {currencyService.formatCurrency(
-                        monthlyStats.totalPending,
-                        currency
-                      )}
-                    </p>
-                    <p className="text-xs text-yellow-700 mt-1">
-                      Estos honorarios deben ser cobrados desde la Caja
-                      Maestra para transferirse aquí.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => navigate("/finance/master-cash")}
-                    className="ml-auto px-4 py-2 bg-yellow-600 text-white text-sm rounded-lg hover:bg-yellow-700 transition-colors"
-                  >
-                    Ir a Caja Maestra
-                  </button>
-                </div>
-              </div>
-            </div>
-          </SectionCard>
-        )}
 
         {/* Collected Fees Section */}
         {collectedFees.length > 0 && (
@@ -552,11 +508,7 @@ export function AdminCashPage() {
                 </div>
               </div>
               <p className="text-sm text-gray-600 mt-1">
-                {collectedFees.length} honorarios cobrados por{" "}
-                {currencyService.formatCurrency(
-                  monthlyStats.monthlyCollected,
-                  currency
-                )}
+                {collectedFees.length} honorarios cobrados automáticamente
               </p>
             </div>
             <div>
@@ -583,27 +535,7 @@ export function AdminCashPage() {
             </div>
           </div>
           <div className="px-6 py-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <button
-                onClick={() => navigate("/finance/master-cash")}
-                className="flex items-center justify-between p-4 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                <div className="flex items-center">
-                  <div className="p-2 bg-gray-900 rounded-lg mr-3">
-                    <PiggyBank className="h-5 w-5 text-white" />
-                  </div>
-                  <div className="text-left">
-                    <p className="text-sm font-medium text-gray-900">
-                      Cobrar Honorarios
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      Desde Caja Maestra
-                    </p>
-                  </div>
-                </div>
-                <ChevronRight className="h-5 w-5 text-gray-400" />
-              </button>
-
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <button
                 onClick={() => navigate("/finance/reports")}
                 className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
@@ -670,8 +602,8 @@ export function AdminCashPage() {
                   className="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-gray-500 focus:border-gray-400"
                 >
                   <option value="all">Todos los movimientos</option>
-                  <option value="transfer">
-                    Transferencias de Honorarios
+                  <option value="admin_fee_collection">
+                    Cobros de Honorarios
                   </option>
                   <option value="operational_expense">
                     Gastos Operativos

@@ -154,31 +154,51 @@ export function ConfirmPaymentPage() {
         amount: selectedInstallment.amount,
         description: `Pago cuota #${selectedInstallment.installment_number} - ${project.name}`,
         installmentId: selectedInstallment.id,
+        currency: project.currency as 'ARS' | 'USD', // Pass project currency
       });
 
       // 3. Create and collect administrative fee for this payment
       const adminFeePercentage =
         await administratorFeeService.getProjectAdminFeePercentage(project.id);
-      
+
+      console.log('💰 Admin Fee Processing:', {
+        projectId: project.id,
+        projectCurrency: project.currency,
+        paymentAmount: selectedInstallment.amount,
+        adminFeePercentage,
+        installmentId: selectedInstallment.id
+      });
+
       if (adminFeePercentage > 0) {
         // Create administrator fee record for this specific payment
         const adminFee = await administratorFeeService.createAdminFee(
           project.id,
           selectedInstallment.amount, // Base fee on this payment amount, not total project
-          'ARS',
+          project.currency as Currency,
           adminFeePercentage,
           selectedInstallment.id // Link fee to specific installment
         );
-        
+
+        console.log('💰 Admin Fee Created:', adminFee);
+
         if (adminFee) {
           // Immediately collect the fee
           const feeCollected = await administratorFeeService.collectAdminFee(adminFee.id);
-          
+
+          console.log('💰 Admin Fee Collection Result:', feeCollected);
+
           if (!feeCollected) {
-            console.error('Failed to collect administrator fee');
+            console.error('❌ Failed to collect administrator fee');
+            alert('ADVERTENCIA: El pago se registró pero hubo un error al cobrar los honorarios administrativos. Revisa la consola.');
             // Continue without failing the entire payment
+          } else {
+            console.log('✅ Administrator fee collected successfully');
           }
+        } else {
+          console.error('❌ Failed to create administrator fee');
         }
+      } else {
+        console.log('⚠️ No admin fee will be collected (percentage is 0 or negative)');
       }
 
       // 5. Reload data

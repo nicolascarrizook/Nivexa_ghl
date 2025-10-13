@@ -14,6 +14,7 @@ interface PaymentConfirmationModalProps {
   projectName: string;
   installmentNumber?: number;
   exchangeRate?: number;
+  allowCurrencySelection?: boolean; // Nueva prop para permitir selección de moneda
 }
 
 export function PaymentConfirmationModal({
@@ -24,7 +25,8 @@ export function PaymentConfirmationModal({
   currency,
   projectName,
   installmentNumber,
-  exchangeRate = 1
+  exchangeRate = 1,
+  allowCurrencySelection = true // Por defecto permitimos selección de moneda
 }: PaymentConfirmationModalProps) {
   const [formData, setFormData] = useState<PaymentConfirmation>({
     confirmed: false,
@@ -35,6 +37,7 @@ export function PaymentConfirmationModal({
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedCurrency, setSelectedCurrency] = useState<Currency>(currency); // Nueva state para moneda seleccionada
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +52,7 @@ export function PaymentConfirmationModal({
       ...formData,
       confirmed: true,
       confirmedAt: new Date().toISOString(),
+      paymentCurrency: selectedCurrency, // Agregar moneda del pago
     };
 
     try {
@@ -142,15 +146,67 @@ export function PaymentConfirmationModal({
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             {/* Amount */}
             <div className="text-center py-4">
+              <div className="text-sm text-gray-500 mb-2">
+                Monto de la cuota ({currency})
+              </div>
               <div className="text-3xl font-semibold text-gray-900">
                 {currencyService.formatCurrency(amount, currency)}
               </div>
               {currency === 'USD' && exchangeRate > 1 && (
                 <div className="text-sm text-gray-500 mt-1">
-                  {currencyService.formatCurrency(amount * exchangeRate, 'ARS')}
+                  ≈ {currencyService.formatCurrency(amount * exchangeRate, 'ARS')}
                 </div>
               )}
             </div>
+
+            {/* Currency Selection */}
+            {allowCurrencySelection && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Moneda del Pago *
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCurrency('ARS')}
+                    className={cn(
+                      "px-4 py-3 text-sm font-medium rounded-lg border transition-all duration-200",
+                      selectedCurrency === 'ARS'
+                        ? "bg-gray-900 text-white border-gray-900 shadow-md"
+                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-400"
+                    )}
+                  >
+                    <div className="flex flex-col items-center">
+                      <span className="text-xs mb-1">Pesos Argentinos</span>
+                      <span className="text-lg font-bold">ARS</span>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCurrency('USD')}
+                    className={cn(
+                      "px-4 py-3 text-sm font-medium rounded-lg border transition-all duration-200",
+                      selectedCurrency === 'USD'
+                        ? "bg-gray-900 text-white border-gray-900 shadow-md"
+                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-400"
+                    )}
+                  >
+                    <div className="flex flex-col items-center">
+                      <span className="text-xs mb-1">Dólares</span>
+                      <span className="text-lg font-bold">USD</span>
+                    </div>
+                  </button>
+                </div>
+                {selectedCurrency !== currency && (
+                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-xs text-blue-700">
+                      ℹ️ El cliente está pagando en {selectedCurrency === 'ARS' ? 'pesos' : 'dólares'},
+                      aunque el proyecto está presupuestado en {currency}.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Payment Method */}
             <div>

@@ -5,6 +5,7 @@ import type { ProjectFormData } from '../types/project.types';
 import type { Currency } from '@/services/CurrencyService';
 import { administratorFeeService } from '@/services/AdministratorFeeService';
 import { newCashBoxService } from '@/services/cash/NewCashBoxService';
+import { clientService } from '@modules/clients/services/ClientService';
 
 export type Project = Tables<'projects'>;
 export type InsertProject = InsertTables<'projects'>;
@@ -18,10 +19,11 @@ export interface ProjectWithDetails extends Project {
   next_payment_date?: string;
   progress_percentage?: number;
   installments?: Installment[];
-  project_cash?: {
-    balance: number;
-    total_received: number;
-    last_movement_at: string | null;
+  project_cash_box?: {
+    current_balance_ars: number;
+    current_balance_usd: number;
+    total_income_ars: number;
+    total_income_usd: number;
   };
 }
 
@@ -94,15 +96,48 @@ export class ProjectService extends BaseService<'projects'> {
         additionalContacts: formData.additionalContacts,
         downPaymentDate: formData.downPaymentDate,
         paymentConfirmation: formData.paymentConfirmation,
+        adminFeeType: formData.adminFeeType,
+        adminFeePercentage: formData.adminFeePercentage,
+        adminFeeAmount: formData.adminFeeAmount,
       },
     };
   }
 
   /**
    * Create project with generated code and project cash box from form data
+   * Creates client in clients table if it doesn't exist (when no clientId provided)
    */
   async createProjectFromForm(formData: ProjectFormData): Promise<ProjectWithDetails | null> {
-    const projectData = this.mapFormDataToInsert(formData);
+    // If no clientId, create the client first
+    let clientId = formData.clientId;
+
+    if (!clientId && formData.clientName) {
+      try {
+        const newClient = await clientService.createClient({
+          name: formData.clientName,
+          email: formData.clientEmail || null,
+          phone: formData.clientPhone || null,
+          tax_id: formData.clientTaxId || null,
+          address: formData.propertyAddress || null,
+          city: formData.city || null,
+        });
+
+        clientId = newClient.id;
+        console.log('Created new client from project wizard:', clientId);
+      } catch (error) {
+        console.error('Error creating client from project wizard:', error);
+        // Continue with project creation even if client creation fails
+        // Project will still have client data in denormalized fields
+      }
+    }
+
+    // Update formData with the new client ID
+    const updatedFormData = {
+      ...formData,
+      clientId: clientId,
+    };
+
+    const projectData = this.mapFormDataToInsert(updatedFormData);
     return this.createProject(projectData);
   }
 
@@ -127,11 +162,13 @@ export class ProjectService extends BaseService<'projects'> {
 
       // Create project cash box (starts with zero balance)
       const { error: cashError } = await supabase
-        .from('project_cash')
+        .from('project_cash_box')
         .insert({
           project_id: projectData.id,
-          balance: 0,
-          total_received: 0,
+          current_balance_ars: 0,
+          current_balance_usd: 0,
+          total_income_ars: 0,
+          total_income_usd: 0,
         });
 
       if (cashError) {
@@ -185,17 +222,59 @@ export class ProjectService extends BaseService<'projects'> {
             projectId: projectData.id,
             amount: downPaymentInstallment.amount,
             description: `Anticipo - ${projectData.name}`,
-            installmentId: downPaymentInstallment.id
+            installmentId: downPaymentInstallment.id,
+            currency: projectData.currency as 'ARS' | 'USD' // Pass project currency
           });
+
+          // Process administrator fee for down payment
+          const metadata = projectData.metadata as any;
+          const adminFeeType = metadata?.adminFeeType || 'percentage';
+          const adminFeePercentage = metadata?.adminFeePercentage || 0;
+          const adminFeeAmount = metadata?.adminFeeAmount || 0;
+
+          if (adminFeeType !== 'none') {
+            let feePercentage = adminFeePercentage;
+            let feeAmount = adminFeeAmount;
+
+            // Calculate fee based on type
+            if (adminFeeType === 'percentage' && feePercentage > 0) {
+              feeAmount = (downPaymentInstallment.amount * feePercentage) / 100;
+            } else if (adminFeeType === 'fixed') {
+              // Use the fixed amount from metadata
+              feeAmount = adminFeeAmount;
+            }
+
+            if (feeAmount > 0) {
+              console.log(`Creating administrator fee: ${feeAmount} ${projectData.currency} (${feePercentage}%)`);
+
+              // Create administrator fee record
+              const adminFee = await administratorFeeService.createAdminFee(
+                projectData.id,
+                downPaymentInstallment.amount,
+                projectData.currency as Currency || 'ARS',
+                feePercentage,
+                downPaymentInstallment.id
+              );
+
+              // Immediately collect the fee (transfer from master to admin cash)
+              if (adminFee) {
+                const collected = await administratorFeeService.collectAdminFee(adminFee.id);
+                if (collected) {
+                  console.log(`✅ Administrator fee collected: ${feeAmount} ${projectData.currency}`);
+                } else {
+                  console.warn('⚠️ Administrator fee created but not collected');
+                }
+              }
+            }
+          }
         }
       }
 
-      // Note: Administrator fees are now created per payment when installments are paid
-      // instead of upfront for the entire project amount
+      // Administrator fees are created per payment when installments are paid
 
       // Get project cash box
       const { data: projectCash } = await supabase
-        .from('project_cash')
+        .from('project_cash_box')
         .select('*')
         .eq('project_id', projectData.id)
         .single();
@@ -210,10 +289,11 @@ export class ProjectService extends BaseService<'projects'> {
         next_payment_amount: nextPayment?.amount,
         next_payment_date: nextPayment?.due_date,
         progress_percentage: progress.percentageComplete,
-        project_cash: projectCash || {
-          balance: 0,
-          total_received: 0,
-          last_movement_at: null,
+        project_cash_box: projectCash || {
+          current_balance_ars: 0,
+          current_balance_usd: 0,
+          total_income_ars: 0,
+          total_income_usd: 0,
         },
       };
 
@@ -253,7 +333,7 @@ export class ProjectService extends BaseService<'projects'> {
 
       // Get project cash box
       const { data: projectCash } = await supabase
-        .from('project_cash')
+        .from('project_cash_box')
         .select('*')
         .eq('project_id', projectId)
         .single();
@@ -316,15 +396,21 @@ export class ProjectService extends BaseService<'projects'> {
         return false;
       }
 
+      // Determine currency from project or payment data (default to ARS if not specified)
+      const currency = (project.currency as Currency) || 'ARS';
+      const isARS = currency === 'ARS';
+
       // Update cash box balances
       const updates = [
         // Update project cash
         supabase
-          .from('project_cash')
+          .from('project_cash_box')
           .update({
-            balance: projectCash.balance + paymentData.amount,
-            total_received: projectCash.total_received + paymentData.amount,
-            last_movement_at: new Date().toISOString(),
+            current_balance_ars: isARS ? projectCash.current_balance_ars + paymentData.amount : projectCash.current_balance_ars,
+            current_balance_usd: !isARS ? projectCash.current_balance_usd + paymentData.amount : projectCash.current_balance_usd,
+            total_income_ars: isARS ? projectCash.total_income_ars + paymentData.amount : projectCash.total_income_ars,
+            total_income_usd: !isARS ? projectCash.total_income_usd + paymentData.amount : projectCash.total_income_usd,
+            updated_at: new Date().toISOString(),
           })
           .eq('id', projectCash.id),
         
@@ -358,6 +444,31 @@ export class ProjectService extends BaseService<'projects'> {
             notes: paymentData.notes || 'Anticipo confirmado',
           })
           .eq('id', downPaymentInstallment.id);
+      }
+
+      // ✨ AUTOMATIC ADMIN FEE LIQUIDATION ✨
+      // If project has admin_fee_percentage configured, automatically liquidate fees
+      if (project.admin_fee_percentage && project.admin_fee_percentage > 0) {
+        try {
+          const feeAmount = (paymentData.amount * project.admin_fee_percentage) / 100;
+          const currency = (project.currency as 'ARS' | 'USD') || 'ARS';
+
+          // Import newCashBoxService for automatic fee liquidation
+          const { newCashBoxService } = await import('@/services/cash/NewCashBoxService');
+
+          await newCashBoxService.collectAdminFeeManual({
+            amount: feeAmount,
+            currency: currency,
+            description: `Honorarios ${project.admin_fee_percentage}% - Anticipo ${project.name}`,
+            projectId: projectId,
+          });
+
+          console.log(`✅ Admin fees automatically liquidated: ${feeAmount} ${currency} (${project.admin_fee_percentage}%)`);
+        } catch (feeError) {
+          console.error('Error liquidating admin fees:', feeError);
+          // Don't fail the entire payment if fee liquidation fails
+          // Just log the error - the payment is still confirmed
+        }
       }
 
       console.log(`✅ Down payment confirmed: ${paymentData.amount} ${project.currency || 'ARS'} for project ${project.code}`);
@@ -456,10 +567,11 @@ export class ProjectService extends BaseService<'projects'> {
       .from(this.tableName)
       .select(`
         *,
-        project_cash(
-          balance,
-          total_received,
-          last_movement_at
+        project_cash_box(
+          current_balance_ars,
+          current_balance_usd,
+          total_income_ars,
+          total_income_usd
         )
       `)
       .order('created_at', { ascending: false });
@@ -491,9 +603,9 @@ export class ProjectService extends BaseService<'projects'> {
           next_payment_amount: nextPayment?.amount || 0,
           paid_amount: progress.totalPaid,
           progress_percentage: progress.percentageComplete,
-          project_cash: Array.isArray(project.project_cash) 
-            ? project.project_cash[0] 
-            : project.project_cash,
+          project_cash_box: Array.isArray(project.project_cash_box)
+            ? project.project_cash_box[0]
+            : project.project_cash_box,
         } as ProjectWithDetails;
       })
     );
@@ -512,14 +624,15 @@ export class ProjectService extends BaseService<'projects'> {
    * Get single project by ID (similar to mock service interface)
    */
   async getProject(id: string): Promise<ProjectWithDetails | null> {
-    const { data, error } = await supabase
+    const { data, error} = await supabase
       .from(this.tableName)
       .select(`
         *,
-        project_cash(
-          balance,
-          total_received,
-          last_movement_at
+        project_cash_box(
+          current_balance_ars,
+          current_balance_usd,
+          total_income_ars,
+          total_income_usd
         )
       `)
       .eq('id', id)
@@ -529,20 +642,20 @@ export class ProjectService extends BaseService<'projects'> {
       console.error('Error fetching project:', error);
       return null;
     }
-    
+
     // Calculate progress and next payment
     const progress = await this.calculateProgress(id);
     const nextPayment = await this.getNextPayment(id);
-    
+
     return {
       ...data,
       paid_amount: progress.totalPaid,
       progress_percentage: progress.percentageComplete,
       next_payment_amount: nextPayment?.amount,
       next_payment_date: nextPayment?.due_date,
-      project_cash: Array.isArray(data.project_cash) 
-        ? data.project_cash[0] 
-        : data.project_cash,
+      project_cash_box: Array.isArray(data.project_cash_box)
+        ? data.project_cash_box[0]
+        : data.project_cash_box,
     } as ProjectWithDetails;
   }
 
@@ -571,10 +684,11 @@ export class ProjectService extends BaseService<'projects'> {
       .from(this.tableName)
       .select(`
         *,
-        project_cash(
-          balance,
-          total_received,
-          last_movement_at
+        project_cash_box(
+          current_balance_ars,
+          current_balance_usd,
+          total_income_ars,
+          total_income_usd
         ),
         installments(
           *
@@ -587,19 +701,19 @@ export class ProjectService extends BaseService<'projects'> {
       console.error('Error fetching project with installments:', error);
       return null;
     }
-    
+
     const progress = await this.calculateProgress(projectId);
     const nextPayment = await this.getNextPayment(projectId);
-    
+
     return {
       ...data,
       paid_amount: progress.totalPaid,
       progress_percentage: progress.percentageComplete,
       next_payment_amount: nextPayment?.amount,
       next_payment_date: nextPayment?.due_date,
-      project_cash: Array.isArray(data.project_cash) 
-        ? data.project_cash[0] 
-        : data.project_cash,
+      project_cash_box: Array.isArray(data.project_cash_box)
+        ? data.project_cash_box[0]
+        : data.project_cash_box,
       installments: data.installments,
     } as ProjectWithDetails;
   }

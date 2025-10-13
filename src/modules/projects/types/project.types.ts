@@ -133,6 +133,7 @@ export interface PaymentConfirmation {
   bankAccount?: string;
   notes?: string;
   confirmedAt?: string;
+  paymentCurrency?: 'ARS' | 'USD'; // Moneda en la que se recibió el pago
 }
 
 export interface PaymentSummary {
