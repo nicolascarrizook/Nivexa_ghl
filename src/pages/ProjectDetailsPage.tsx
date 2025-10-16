@@ -39,7 +39,7 @@ import type { StatCardProps } from "@/design-system/components/data-display/Stat
 import { SectionCard } from "@/design-system/components/layout";
 
 // Utilities and Services
-import { PaymentSelectionModal } from "@/modules/projects/components/PaymentSelectionModal";
+import { StreamlinedPaymentModal, ProjectDetailsSkeleton } from "@/modules/projects/components";
 import type {
   Installment,
   ProjectWithDetails,
@@ -56,7 +56,11 @@ import {
   ManagePaymentsModal,
   ManageWorkModal,
 } from "@/modules/providers/components";
-import { useProjectContractors } from "@/modules/providers/hooks";
+import { useProjectContractors, useProjectExpenses } from "@/modules/providers/hooks";
+import { ProjectCashFlowCard } from "@/modules/finance/components";
+
+// Investors Components
+import { InvestorsSection } from "@/modules/investors/components";
 
 interface ProjectExpense {
   id: string;
@@ -64,7 +68,10 @@ interface ProjectExpense {
   amount: number;
   category: string;
   date: string;
-  status: "pending" | "approved" | "paid";
+  status: "pending" | "paid" | "overdue" | "cancelled";
+  contractor_name?: string;
+  payment_type?: string;
+  currency: 'ARS' | 'USD';
 }
 
 interface ProjectDocument {
@@ -84,83 +91,13 @@ interface TeamMember {
   status: "active" | "inactive";
 }
 
-// Mock data - replace with real data from services
-const mockExpenses: ProjectExpense[] = [
-  {
-    id: "1",
-    description: "Materiales de construcción",
-    amount: 125000,
-    category: "Materiales",
-    date: "2024-01-15",
-    status: "paid",
-  },
-  {
-    id: "2",
-    description: "Herramientas especializadas",
-    amount: 85000,
-    category: "Equipamiento",
-    date: "2024-01-12",
-    status: "approved",
-  },
-  {
-    id: "3",
-    description: "Transporte de materiales",
-    amount: 25000,
-    category: "Logística",
-    date: "2024-01-10",
-    status: "pending",
-  },
-];
+// Mock data removed - now using real data from useProjectExpenses hook
 
-const mockDocuments: ProjectDocument[] = [
-  {
-    id: "1",
-    name: "Contrato de Obra.pdf",
-    type: "PDF",
-    date: "2024-01-01",
-    size: "2.3 MB",
-  },
-  {
-    id: "2",
-    name: "Planos Arquitectónicos.dwg",
-    type: "DWG",
-    date: "2024-01-05",
-    size: "15.7 MB",
-  },
-  {
-    id: "3",
-    name: "Memoria Técnica.docx",
-    type: "Word",
-    date: "2024-01-08",
-    size: "1.2 MB",
-  },
-];
+// TODO: Implement real documents management system
+// const mockDocuments removed - feature pending implementation
 
-const mockTeamMembers: TeamMember[] = [
-  {
-    id: "1",
-    name: "Carlos Rodríguez",
-    role: "Arquitecto Principal",
-    email: "carlos@nivexa.com",
-    phone: "+34 611 123 456",
-    status: "active",
-  },
-  {
-    id: "2",
-    name: "Ana Martínez",
-    role: "Ingeniera Estructural",
-    email: "ana@nivexa.com",
-    phone: "+34 622 789 012",
-    status: "active",
-  },
-  {
-    id: "3",
-    name: "Luis Fernández",
-    role: "Supervisor de Obra",
-    email: "luis@nivexa.com",
-    status: "inactive",
-  },
-];
+// TODO: Implement real team management system
+// const mockTeamMembers removed - feature pending implementation
 
 export function ProjectDetailsPage() {
   const navigate = useNavigate();
@@ -168,7 +105,7 @@ export function ProjectDetailsPage() {
   const [project, setProject] = useState<ProjectWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<
-    "overview" | "payments" | "expenses" | "documents" | "team" | "contractors"
+    "overview" | "payments" | "expenses" | "documents" | "team" | "contractors" | "investors"
   >("overview");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedContractorId, setSelectedContractorId] = useState<
@@ -189,6 +126,13 @@ export function ProjectDetailsPage() {
     refetch: refetchContractors,
     deleteContractor,
   } = useProjectContractors(projectId || "");
+
+  // Load expenses (contractor payments) for this project
+  const {
+    expenses,
+    loading: expensesLoading,
+    refetch: refetchExpenses,
+  } = useProjectExpenses(projectId || "");
 
   useEffect(() => {
     if (projectId) {
@@ -218,42 +162,52 @@ export function ProjectDetailsPage() {
     }
   };
 
+  // Project status configuration - unified with design tokens semantics
   const getStatusConfig = (status: string) => {
     switch (status) {
       case "active":
-        return { label: "Activo", variant: "primary" as const };
+        return { label: "Activo", variant: "success" as const };
       case "completed":
         return { label: "Completado", variant: "default" as const };
       case "paused":
-        return { label: "Pausado", variant: "error" as const };
+      case "on_hold":
+        return { label: "Pausado", variant: "warning" as const };
       case "cancelled":
         return { label: "Cancelado", variant: "error" as const };
+      case "draft":
+        return { label: "Borrador", variant: "default" as const };
       default:
         return { label: status, variant: "default" as const };
     }
   };
 
+  // Payment/Installment status configuration - unified with design tokens semantics
   const getInstallmentStatusConfig = (status: string) => {
     switch (status) {
       case "paid":
-        return { label: "Pagado", variant: "primary" as const };
+        return { label: "Pagado", variant: "success" as const };
       case "pending":
-        return { label: "Pendiente", variant: "error" as const };
+        return { label: "Pendiente", variant: "warning" as const };
       case "overdue":
         return { label: "Vencido", variant: "error" as const };
+      case "cancelled":
+        return { label: "Cancelado", variant: "default" as const };
       default:
         return { label: status, variant: "default" as const };
     }
   };
 
+  // Expense status configuration - unified with design tokens semantics
   const getExpenseStatusConfig = (status: string) => {
     switch (status) {
       case "paid":
-        return { label: "Pagado", variant: "primary" as const };
-      case "approved":
-        return { label: "Aprobado", variant: "default" as const };
+        return { label: "Pagado", variant: "success" as const };
       case "pending":
-        return { label: "Pendiente", variant: "error" as const };
+        return { label: "Pendiente", variant: "warning" as const };
+      case "overdue":
+        return { label: "Vencido", variant: "error" as const };
+      case "cancelled":
+        return { label: "Cancelado", variant: "default" as const };
       default:
         return { label: status, variant: "default" as const };
     }
@@ -361,7 +315,7 @@ export function ProjectDetailsPage() {
       key: "description",
       title: "Descripción",
       sortable: true,
-      render: (_, record) => (
+      render: (_, record: ProjectExpense) => (
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 bg-gray-100 rounded flex items-center justify-center">
             <DollarSign className="h-4 w-4 text-gray-600" />
@@ -370,7 +324,10 @@ export function ProjectDetailsPage() {
             <p className="text-sm font-medium text-gray-900">
               {record.description}
             </p>
-            <p className="text-xs text-gray-500">{record.category}</p>
+            <p className="text-xs text-gray-500">
+              {record.contractor_name && `${record.contractor_name} • `}
+              {record.category}
+            </p>
           </div>
         </div>
       ),
@@ -380,9 +337,9 @@ export function ProjectDetailsPage() {
       title: "Monto",
       sortable: true,
       align: "right",
-      render: (value) => (
+      render: (value, record: ProjectExpense) => (
         <span className="text-sm font-medium text-gray-900">
-          {formatCurrency(value)}
+          {formatCurrency(value, record.currency)}
         </span>
       ),
     },
@@ -529,14 +486,7 @@ export function ProjectDetailsPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="flex items-center space-x-2">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900"></div>
-          <span className="text-gray-600">Cargando proyecto...</span>
-        </div>
-      </div>
-    );
+    return <ProjectDetailsSkeleton />;
   }
 
   if (!project) {
@@ -783,15 +733,15 @@ export function ProjectDetailsPage() {
                     title: "Caja Proyecto ARS",
                     value: formatCurrency(project.project_cash_box?.current_balance_ars || 0, 'ARS'),
                     icon: DollarSign,
-                    description: `Total recibido: ${formatCurrency(project.project_cash_box?.total_income_ars || 0, 'ARS')}`,
-                    variant: "default",
+                    description: `Ingresos: ${formatCurrency(project.project_cash_box?.total_income_ars || 0, 'ARS')} | Gastos: ${formatCurrency(project.project_cash_box?.total_expenses_ars || 0, 'ARS')}`,
+                    variant: (project.project_cash_box?.current_balance_ars || 0) < 0 ? "error" : "default",
                   },
                   {
                     title: "Caja Proyecto USD",
                     value: formatCurrency(project.project_cash_box?.current_balance_usd || 0, 'USD'),
                     icon: DollarSign,
-                    description: `Total recibido: ${formatCurrency(project.project_cash_box?.total_income_usd || 0, 'USD')}`,
-                    variant: "default",
+                    description: `Ingresos: ${formatCurrency(project.project_cash_box?.total_income_usd || 0, 'USD')} | Gastos: ${formatCurrency(project.project_cash_box?.total_expenses_usd || 0, 'USD')}`,
+                    variant: (project.project_cash_box?.current_balance_usd || 0) < 0 ? "error" : "default",
                   },
                   {
                     title: `Pagado (${currency})`,
@@ -845,13 +795,14 @@ export function ProjectDetailsPage() {
               <div className="border-b border-gray-200 mb-6">
                 <nav className="flex">
                   {[
-                    { key: "overview", label: "Resumen", icon: Home },
-                    { key: "payments", label: "Pagos", icon: CreditCard },
-                    { key: "contractors", label: "Proveedores", icon: HardHat },
-                    { key: "expenses", label: "Gastos", icon: DollarSign },
-                    { key: "documents", label: "Documentos", icon: FileText },
-                    { key: "team", label: "Equipo", icon: Users },
-                  ].map(({ key, label, icon: Icon }) => (
+                    { key: "overview", label: "Resumen", icon: Home, count: null },
+                    { key: "payments", label: "Pagos", icon: CreditCard, count: project.installments?.length || 0 },
+                    { key: "investors", label: "Inversionistas", icon: Users, count: null },
+                    { key: "contractors", label: "Proveedores", icon: HardHat, count: contractors?.length || 0 },
+                    { key: "expenses", label: "Gastos", icon: DollarSign, count: expenses?.length || 0 },
+                    { key: "documents", label: "Documentos", icon: FileText, count: null },
+                    { key: "team", label: "Equipo", icon: Users, count: null },
+                  ].map(({ key, label, icon: Icon, count }) => (
                     <button
                       key={key}
                       onClick={() => setActiveTab(key as any)}
@@ -863,6 +814,15 @@ export function ProjectDetailsPage() {
                     >
                       <Icon className="h-4 w-4" />
                       <span>{label}</span>
+                      {count !== null && count > 0 && (
+                        <Badge
+                          variant={activeTab === key ? "primary" : "default"}
+                          size="sm"
+                          className="ml-1.5"
+                        >
+                          {count}
+                        </Badge>
+                      )}
                     </button>
                   ))}
                 </nav>
@@ -935,6 +895,42 @@ export function ProjectDetailsPage() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Cash Flow Explanation */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h3 className="text-sm font-semibold text-blue-900 mb-2 flex items-center">
+                        <DollarSign className="h-4 w-4 mr-2" />
+                        Sistema de Triple Caja
+                      </h3>
+                      <p className="text-xs text-blue-800 leading-relaxed">
+                        Cada proyecto tiene su propia <strong>Caja de Proyecto</strong> que rastrea todos los ingresos y gastos.
+                        Cuando el proyecto recibe un pago, este se duplica automáticamente en la <strong>Caja Master</strong> del estudio.
+                        Desde la Caja Master, el arquitecto puede decidir cuándo y cuánto cobrar de honorarios hacia su <strong>Caja Admin</strong> personal.
+                      </p>
+                    </div>
+
+                    {/* Project Cash Flow - ARS */}
+                    {project.project_cash_box && (
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-900 mb-4">
+                          Flujo de Caja del Proyecto
+                        </h3>
+                        <div className="space-y-4">
+                          <ProjectCashFlowCard
+                            currency="ARS"
+                            totalIncome={project.project_cash_box.total_income_ars || 0}
+                            totalExpenses={project.project_cash_box.total_expenses_ars || 0}
+                            currentBalance={project.project_cash_box.current_balance_ars || 0}
+                          />
+                          <ProjectCashFlowCard
+                            currency="USD"
+                            totalIncome={project.project_cash_box.total_income_usd || 0}
+                            totalExpenses={project.project_cash_box.total_expenses_usd || 0}
+                            currentBalance={project.project_cash_box.current_balance_usd || 0}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1047,22 +1043,23 @@ export function ProjectDetailsPage() {
 
               {activeTab === "expenses" && (
                 <DataTable
-                  data={mockExpenses}
+                  data={expenses}
                   columns={expenseColumns}
-                  loading={false}
+                  loading={expensesLoading}
                   rowKey="id"
-                  searchable={false}
-                  exportable={false}
+                  searchable={true}
+                  searchPlaceholder="Buscar gastos..."
+                  exportable={true}
                   size="md"
                   bordered={false}
                   emptyText="No hay gastos registrados para este proyecto."
-                  pagination={false}
+                  pagination={true}
                 />
               )}
 
               {activeTab === "documents" && (
                 <DataTable
-                  data={mockDocuments}
+                  data={[]}
                   columns={documentColumns}
                   loading={false}
                   rowKey="id"
@@ -1071,14 +1068,14 @@ export function ProjectDetailsPage() {
                   exportable={false}
                   size="md"
                   bordered={false}
-                  emptyText="No hay documentos para este proyecto."
+                  emptyText="La gestión de documentos estará disponible próximamente."
                   pagination={false}
                 />
               )}
 
               {activeTab === "team" && (
                 <DataTable
-                  data={mockTeamMembers}
+                  data={[]}
                   columns={teamColumns}
                   loading={false}
                   rowKey="id"
@@ -1086,9 +1083,15 @@ export function ProjectDetailsPage() {
                   exportable={false}
                   size="md"
                   bordered={false}
-                  emptyText="No hay miembros asignados a este proyecto."
+                  emptyText="La gestión de equipo estará disponible próximamente."
                   pagination={false}
                 />
+              )}
+
+              {activeTab === "investors" && projectId && (
+                <div className="p-6">
+                  <InvestorsSection projectId={projectId} />
+                </div>
               )}
             </SectionCard>
           </div>
@@ -1167,53 +1170,18 @@ export function ProjectDetailsPage() {
                 </div>
               </SectionCard>
 
-              {/* Recent Activity */}
+              {/* Recent Activity - TODO: Implement real activity tracking */}
               <SectionCard className="p-4">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">
                   Actividad Reciente
                 </h2>
-                <div className="space-y-4">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center flex-shrink-0">
-                      <CreditCard className="h-3 w-3 text-gray-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">
-                        Pago confirmado
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Cuota #2 • hace 2 días
-                      </p>
-                    </div>
+                <div className="text-center py-8">
+                  <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <FileText className="h-6 w-6 text-gray-400" />
                   </div>
-
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center flex-shrink-0">
-                      <FileText className="h-3 w-3 text-gray-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">
-                        Documento subido
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Plano actualizado • hace 3 días
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start space-x-3">
-                    <div className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center flex-shrink-0">
-                      <Users className="h-3 w-3 text-gray-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900">
-                        Miembro agregado
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Ana Martínez • hace 1 semana
-                      </p>
-                    </div>
-                  </div>
+                  <p className="text-sm text-gray-500">
+                    El registro de actividad estará disponible próximamente
+                  </p>
                 </div>
               </SectionCard>
             </div>
@@ -1221,9 +1189,9 @@ export function ProjectDetailsPage() {
         </div>
       </div>
 
-      {/* Payment Selection Modal */}
+      {/* Streamlined Payment Modal - Unified 3-step flow */}
       {project && (
-        <PaymentSelectionModal
+        <StreamlinedPaymentModal
           isOpen={showPaymentModal}
           onClose={() => setShowPaymentModal(false)}
           projectId={project.id}
@@ -1259,10 +1227,15 @@ export function ProjectDetailsPage() {
                 onClose={() => {
                   setShowManagePaymentsModal(false);
                   refetchContractors();
+                  loadProject(); // Refresh project cash boxes
                 }}
                 projectContractorId={selectedContractorId}
                 contractorName={selectedContractorName}
-                onPaymentChange={refetchContractors}
+                onPaymentChange={() => {
+                  refetchContractors();
+                  refetchExpenses(); // Refresh expenses list
+                  loadProject(); // Refresh project cash boxes after payment
+                }}
               />
 
               <ManageWorkModal

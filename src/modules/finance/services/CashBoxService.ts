@@ -190,9 +190,35 @@ export class CashBoxService {
     const projectCash = await this.getProjectCash(projectId);
     if (!projectCash) throw new Error('Project cash box not found');
 
-    // Get master cash box
-    const masterCash = await this.getMasterCash();
-    if (!masterCash) throw new Error('Master cash box not found');
+    // Get master cash box - create if doesn't exist
+    let masterCash = await this.getMasterCash();
+    if (!masterCash || !masterCash.id) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data: newMasterCash, error: createError } = await supabase
+        .from('master_cash_box')
+        .insert({
+          organization_id: user.id,
+          name: 'Caja Maestra Principal',
+          current_balance_ars: 0,
+          current_balance_usd: 0,
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        throw new Error(`Failed to create master cash box: ${createError.message}`);
+      }
+
+      masterCash = {
+        id: newMasterCash.id,
+        balance: 0,
+        balance_ars: 0,
+        balance_usd: 0,
+        total_collected: 0,
+      };
+    }
     
     // Check if new balances would exceed limits
     const newProjectBalance = projectCash.balance + sanitizedAmount;
@@ -271,6 +297,96 @@ export class CashBoxService {
   }
 
   /**
+   * Register investor contribution (cash investment)
+   * IMPORTANT: This ONLY affects project_cash_box, NOT master_cash
+   * Investor contributions are capital, not client payments, so no duplication or fees
+   */
+  async registerInvestorContribution(data: {
+    projectId: string;
+    investorId: string;
+    amount: number;
+    currency: 'ARS' | 'USD';
+    notes?: string;
+  }): Promise<void> {
+    // Validate amount
+    if (!isValidCurrencyAmount(data.amount)) {
+      throw new Error(getCurrencyOverflowError(data.amount));
+    }
+
+    // Sanitize amount
+    const sanitizedAmount = sanitizeCurrencyAmount(data.amount);
+
+    // Get project cash box
+    const { data: projectCash, error: projectCashError } = await supabase
+      .from('project_cash_box')
+      .select('*')
+      .eq('project_id', data.projectId)
+      .single();
+
+    if (projectCashError || !projectCash) {
+      throw new Error('Project cash box not found');
+    }
+
+    // Calculate new balance based on currency
+    const isArs = data.currency === 'ARS';
+    const currentBalance = isArs ? projectCash.current_balance_ars : projectCash.current_balance_usd;
+    const newBalance = currentBalance + sanitizedAmount;
+
+    // Validate new balance doesn't exceed limits
+    if (!isValidCurrencyAmount(newBalance)) {
+      throw new Error(`New project balance would exceed limit: ${getCurrencyOverflowError(newBalance)}`);
+    }
+
+    // Create cash movement record
+    const movement: InsertCashMovement = {
+      movement_type: 'investor_contribution',
+      source_type: 'investor_contribution',
+      source_id: data.investorId,
+      destination_type: 'project_cash_box',
+      destination_id: projectCash.id,
+      amount: sanitizedAmount,
+      currency: data.currency,
+      description: data.notes || `Inversión de capital - ${data.currency}`,
+      project_id: data.projectId,
+    };
+
+    // Insert movement
+    const { error: movementError } = await supabase
+      .from('cash_movements')
+      .insert(movement);
+
+    if (movementError) {
+      console.error('Error inserting cash movement:', movementError);
+      throw movementError;
+    }
+
+    // Update project cash box balance
+    const updates = isArs
+      ? {
+          current_balance_ars: newBalance,
+          total_income_ars: (projectCash.total_income_ars || 0) + sanitizedAmount,
+        }
+      : {
+          current_balance_usd: newBalance,
+          total_income_usd: (projectCash.total_income_usd || 0) + sanitizedAmount,
+        };
+
+    const { error: updateError } = await supabase
+      .from('project_cash_box')
+      .update(updates)
+      .eq('id', projectCash.id);
+
+    if (updateError) {
+      console.error('Error updating project cash box:', updateError);
+      throw updateError;
+    }
+
+    console.log(
+      `✅ Investor contribution registered: ${data.currency} ${sanitizedAmount} to project ${data.projectId}`
+    );
+  }
+
+  /**
    * Collect fees from master to admin cash
    */
   async collectFees(
@@ -289,13 +405,42 @@ export class CashBoxService {
     const sanitizedAmount = sanitizeCurrencyAmount(amount);
     
     // Get cash boxes
-    const [masterCash, adminCash] = await Promise.all([
+    let [masterCash, adminCash] = await Promise.all([
       this.getMasterCash(),
       this.getAdminCash(),
     ]);
 
-    if (!masterCash || !adminCash) {
-      throw new Error('Cash boxes not found');
+    // Create master cash if it doesn't exist
+    if (!masterCash || !masterCash.id) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data: newMasterCash, error: createError } = await supabase
+        .from('master_cash_box')
+        .insert({
+          organization_id: user.id,
+          name: 'Caja Maestra Principal',
+          current_balance_ars: 0,
+          current_balance_usd: 0,
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        throw new Error(`Failed to create master cash box: ${createError.message}`);
+      }
+
+      masterCash = {
+        id: newMasterCash.id,
+        balance: 0,
+        balance_ars: 0,
+        balance_usd: 0,
+        total_collected: 0,
+      };
+    }
+
+    if (!adminCash) {
+      throw new Error('Admin cash box not found');
     }
 
     if (masterCash.balance < sanitizedAmount) {
@@ -458,6 +603,194 @@ export class CashBoxService {
       .eq('id', sourceId);
 
     if (updateError) throw updateError;
+  }
+
+  /**
+   * Record a provider payment - deducts from both project and master cash boxes
+   * @param projectId Project ID
+   * @param amount Payment amount
+   * @param currency Currency (ARS or USD)
+   * @param description Payment description (provider name, work details, etc.)
+   * @param contractorPaymentId Optional contractor_payment ID for linking
+   * @returns The created cash movement ID
+   */
+  async recordProviderPayment(
+    projectId: string,
+    amount: number,
+    currency: 'ARS' | 'USD',
+    description: string,
+    contractorPaymentId?: string
+  ): Promise<string> {
+    // Validate amount
+    if (!isValidCurrencyAmount(amount)) {
+      throw new Error(getCurrencyOverflowError(amount));
+    }
+
+    const sanitizedAmount = sanitizeCurrencyAmount(amount);
+
+    // Get both cash boxes
+    const [projectCash, masterCash] = await Promise.all([
+      this.getProjectCash(projectId),
+      this.getMasterCash(),
+    ]);
+
+    if (!projectCash) {
+      throw new Error('Project cash box not found');
+    }
+
+    // If master cash doesn't exist, create it automatically
+    if (!masterCash || !masterCash.id) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Check if organizations table exists and get/create organization
+      let orgId = user.id; // Use user.id as organization_id by default
+
+      // Try to create master_cash_box
+      const { data: newMasterCash, error: createError } = await supabase
+        .from('master_cash_box')
+        .insert({
+          organization_id: orgId,
+          name: 'Caja Maestra Principal',
+          current_balance_ars: 0,
+          current_balance_usd: 0,
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        throw new Error(`Failed to create master cash box: ${createError.message}`);
+      }
+
+      // Update masterCash with the newly created one
+      masterCash = {
+        id: newMasterCash.id,
+        balance: 0,
+        balance_ars: 0,
+        balance_usd: 0,
+        total_collected: 0,
+      };
+    }
+
+    // Check if project has sufficient funds in the correct currency
+    const projectBalance = currency === 'USD'
+      ? (projectCash.balance_usd || 0)
+      : (projectCash.balance_ars || 0);
+
+    if (projectBalance < sanitizedAmount) {
+      throw new Error(
+        `Insufficient funds in project ${currency} cash box. ` +
+        `Available: ${currency} ${projectBalance.toLocaleString('es-AR', { minimumFractionDigits: 2 })}, ` +
+        `Required: ${currency} ${sanitizedAmount.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+      );
+    }
+
+    // Check if master has sufficient funds
+    const masterBalance = currency === 'USD'
+      ? (masterCash.balance_usd || 0)
+      : (masterCash.balance_ars || 0);
+
+    if (masterBalance < sanitizedAmount) {
+      throw new Error(
+        `Insufficient funds in master ${currency} cash box. ` +
+        `Available: ${currency} ${masterBalance.toLocaleString('es-AR', { minimumFractionDigits: 2 })}, ` +
+        `Required: ${currency} ${sanitizedAmount.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+      );
+    }
+
+    // Calculate new balances
+    const newProjectBalance = projectBalance - sanitizedAmount;
+    const newMasterBalance = masterBalance - sanitizedAmount;
+
+    // Validate new balances won't overflow
+    if (!isValidCurrencyAmount(newProjectBalance)) {
+      throw new Error(`New project balance calculation error: ${getCurrencyOverflowError(newProjectBalance)}`);
+    }
+    if (!isValidCurrencyAmount(newMasterBalance)) {
+      throw new Error(`New master balance calculation error: ${getCurrencyOverflowError(newMasterBalance)}`);
+    }
+
+    // Create expense movement from project cash to external (provider)
+    const movementData: InsertCashMovement = {
+      movement_type: 'expense',
+      source_type: 'project',
+      source_id: projectCash.id,
+      destination_type: 'external',
+      destination_id: null,
+      amount: sanitizedAmount,
+      description: `${description} (${currency})`,
+      project_id: projectId,
+      metadata: {
+        currency,
+        contractor_payment_id: contractorPaymentId,
+      },
+    };
+
+    const { data: movement, error: movementError } = await supabase
+      .from('cash_movements')
+      .insert(movementData)
+      .select()
+      .single();
+
+    if (movementError) throw movementError;
+    if (!movement) throw new Error('Failed to create cash movement');
+
+    // Create mirrored expense movement from master cash
+    const masterMovementData: InsertCashMovement = {
+      movement_type: 'expense',
+      source_type: 'master',
+      source_id: masterCash.id,
+      destination_type: 'external',
+      destination_id: null,
+      amount: sanitizedAmount,
+      description: `Reflejo: ${description} (${currency})`,
+      project_id: projectId,
+      metadata: {
+        currency,
+        contractor_payment_id: contractorPaymentId,
+        mirrored_from_project: true,
+      },
+    };
+
+    const { error: masterMovementError } = await supabase
+      .from('cash_movements')
+      .insert(masterMovementData);
+
+    if (masterMovementError) throw masterMovementError;
+
+    // Update project cash box balance
+    const projectUpdateField = currency === 'USD'
+      ? { current_balance_usd: newProjectBalance }
+      : { current_balance_ars: newProjectBalance };
+
+    const { error: projectUpdateError } = await supabase
+      .from('project_cash_box')
+      .update({
+        ...projectUpdateField,
+        last_movement_at: new Date().toISOString(),
+      })
+      .eq('id', projectCash.id);
+
+    if (projectUpdateError) throw projectUpdateError;
+
+    // Update master cash box balance
+    const masterUpdateField = currency === 'USD'
+      ? { current_balance_usd: newMasterBalance }
+      : { current_balance_ars: newMasterBalance };
+
+    const { error: masterUpdateError } = await supabase
+      .from('master_cash_box')
+      .update({
+        ...masterUpdateField,
+        last_movement_at: new Date().toISOString(),
+      })
+      .eq('id', masterCash.id);
+
+    if (masterUpdateError) throw masterUpdateError;
+
+    return movement.id;
   }
 
   /**

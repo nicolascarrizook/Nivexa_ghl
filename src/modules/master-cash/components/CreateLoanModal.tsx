@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { X, DollarSign, Calendar, Percent, FileText } from 'lucide-react';
-import { useCreateLoan } from '@/hooks/useMasterCash';
-import type { CreateLoanData } from '@/services/InterProjectLoanService';
+import { useCreateLoan } from '@/hooks/useMasterLoans';
+import type { CreateMasterLoanData } from '@/services/MasterLoanService';
 import { cn } from '@/lib/utils';
+import { ProjectViabilityPanel } from './ProjectViabilityPanel';
+import type { ViabilityAnalysis } from '@/services/ProjectViabilityAnalysisService';
+import { supabase } from '@/config/supabase';
 
 interface CreateLoanModalProps {
   isOpen: boolean;
@@ -12,9 +15,8 @@ interface CreateLoanModalProps {
 export function CreateLoanModal({ isOpen, onClose }: CreateLoanModalProps) {
   const { mutateAsync: createLoan, isPending } = useCreateLoan();
 
-  const [formData, setFormData] = useState<CreateLoanData>({
-    lender_project_id: '',
-    borrower_project_id: '',
+  const [formData, setFormData] = useState<CreateMasterLoanData>({
+    project_id: '',
     amount: 0,
     currency: 'ARS',
     interest_rate: 0,
@@ -25,21 +27,25 @@ export function CreateLoanModal({ isOpen, onClose }: CreateLoanModalProps) {
     installments_count: 1,
   });
 
-  const [errors, setErrors] = useState<Partial<Record<keyof CreateLoanData, string>>>({});
+  const [errors, setErrors] = useState<Partial<Record<keyof CreateMasterLoanData, string>>>({});
   const [projects, setProjects] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [viabilityAnalysis, setViabilityAnalysis] = useState<ViabilityAnalysis | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       // Cargar proyectos disponibles
       const loadProjects = async () => {
         try {
-          const { createClient } = await import('@/config/supabase');
-          const supabase = createClient();
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('projects')
             .select('id, name, code')
-            .in('status', ['in_progress', 'planning'])
+            .is('deleted_at', null)
             .order('name');
+
+          if (error) {
+            console.error('Error loading projects:', error);
+            return;
+          }
 
           if (data) setProjects(data);
         } catch (error) {
@@ -54,22 +60,29 @@ export function CreateLoanModal({ isOpen, onClose }: CreateLoanModalProps) {
   if (!isOpen) return null;
 
   const validateForm = (): boolean => {
-    const newErrors: Partial<Record<keyof CreateLoanData, string>> = {};
+    const newErrors: Partial<Record<keyof CreateMasterLoanData, string>> = {};
 
-    if (!formData.lender_project_id) {
-      newErrors.lender_project_id = 'Selecciona el proyecto prestador';
-    }
-
-    if (!formData.borrower_project_id) {
-      newErrors.borrower_project_id = 'Selecciona el proyecto prestatario';
-    }
-
-    if (formData.lender_project_id === formData.borrower_project_id) {
-      newErrors.borrower_project_id = 'Los proyectos deben ser diferentes';
+    if (!formData.project_id) {
+      newErrors.project_id = 'Selecciona el proyecto';
     }
 
     if (formData.amount <= 0) {
       newErrors.amount = 'El monto debe ser mayor a 0';
+    }
+
+    // Check against viability analysis recommendations
+    if (viabilityAnalysis && formData.amount > 0) {
+      const maxSafe = formData.currency === 'ARS'
+        ? viabilityAnalysis.recommendations.maxSafeLoanARS
+        : viabilityAnalysis.recommendations.maxSafeLoanUSD;
+
+      if (formData.amount > maxSafe * 1.5) {
+        newErrors.amount = `El monto excede significativamente el recomendado (${formData.currency === 'USD' ? 'U$S' : '$'}${maxSafe.toLocaleString()})`;
+      }
+
+      if (viabilityAnalysis.riskScore < 40) {
+        newErrors.project_id = 'El análisis indica alto riesgo de impago';
+      }
     }
 
     if (!formData.due_date) {
@@ -101,13 +114,19 @@ export function CreateLoanModal({ isOpen, onClose }: CreateLoanModalProps) {
     if (!isValid) return;
 
     try {
-      await createLoan(formData);
+      // Include viability analysis in loan data
+      const loanData: CreateMasterLoanData = {
+        ...formData,
+        viability_score: viabilityAnalysis?.riskScore,
+        risk_level: viabilityAnalysis?.riskLevel,
+      };
+
+      await createLoan(loanData);
       onClose();
 
       // Reset form
       setFormData({
-        lender_project_id: '',
-        borrower_project_id: '',
+        project_id: '',
         amount: 0,
         currency: 'ARS',
         interest_rate: 0,
@@ -117,12 +136,13 @@ export function CreateLoanModal({ isOpen, onClose }: CreateLoanModalProps) {
         payment_terms: '',
         installments_count: 1,
       });
+      setViabilityAnalysis(null);
     } catch (error) {
       console.error('Error creating loan:', error);
     }
   };
 
-  const handleInputChange = <K extends keyof CreateLoanData>(field: K) => (
+  const handleInputChange = <K extends keyof CreateMasterLoanData>(field: K) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const value = field === 'amount' || field === 'interest_rate' || field === 'installments_count'
@@ -154,9 +174,14 @@ export function CreateLoanModal({ isOpen, onClose }: CreateLoanModalProps) {
       <div className="fixed inset-x-4 top-[5%] z-50 mx-auto max-w-3xl bg-white rounded-lg border border-gray-200">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">
-            Nuevo Préstamo Inter-Proyecto
-          </h2>
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">
+              Nuevo Préstamo desde Caja Master
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Nivexa presta dinero a un proyecto
+            </p>
+          </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
@@ -168,65 +193,50 @@ export function CreateLoanModal({ isOpen, onClose }: CreateLoanModalProps) {
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 py-4 max-h-[70vh] overflow-y-auto">
           <div className="space-y-6">
-            {/* Proyectos */}
+            {/* Project Selection */}
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-3">
-                Proyectos Involucrados
+                Proyecto Beneficiario
               </h3>
-              <div className="grid grid-cols-2 gap-4">
-                {/* Lender Project */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Proyecto Prestador *
-                  </label>
-                  <select
-                    value={formData.lender_project_id}
-                    onChange={handleInputChange('lender_project_id')}
-                    className={cn(
-                      "w-full px-3 py-2 border rounded-lg text-gray-900",
-                      "focus:outline-none focus:ring-2 focus:ring-gray-300",
-                      errors.lender_project_id ? "border-red-300" : "border-gray-200"
-                    )}
-                  >
-                    <option value="">Seleccionar...</option>
-                    {projects.map(project => (
-                      <option key={project.id} value={project.id}>
-                        {project.name} ({project.code})
-                      </option>
-                    ))}
-                  </select>
-                  {errors.lender_project_id && (
-                    <p className="mt-1 text-sm text-red-600">{errors.lender_project_id}</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Selecciona el proyecto que recibirá el préstamo *
+                </label>
+                <select
+                  value={formData.project_id}
+                  onChange={handleInputChange('project_id')}
+                  className={cn(
+                    "w-full px-3 py-2 border rounded-lg text-gray-900",
+                    "focus:outline-none focus:ring-2 focus:ring-gray-300",
+                    errors.project_id ? "border-red-300" : "border-gray-200"
                   )}
-                </div>
-
-                {/* Borrower Project */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Proyecto Prestatario *
-                  </label>
-                  <select
-                    value={formData.borrower_project_id}
-                    onChange={handleInputChange('borrower_project_id')}
-                    className={cn(
-                      "w-full px-3 py-2 border rounded-lg text-gray-900",
-                      "focus:outline-none focus:ring-2 focus:ring-gray-300",
-                      errors.borrower_project_id ? "border-red-300" : "border-gray-200"
-                    )}
-                  >
-                    <option value="">Seleccionar...</option>
-                    {projects.map(project => (
-                      <option key={project.id} value={project.id}>
-                        {project.name} ({project.code})
-                      </option>
-                    ))}
-                  </select>
-                  {errors.borrower_project_id && (
-                    <p className="mt-1 text-sm text-red-600">{errors.borrower_project_id}</p>
+                >
+                  <option value="">Seleccionar proyecto...</option>
+                  {projects.length === 0 && (
+                    <option disabled>No hay proyectos disponibles</option>
                   )}
-                </div>
+                  {projects.map(project => (
+                    <option key={project.id} value={project.id}>
+                      {project.name} ({project.code})
+                    </option>
+                  ))}
+                </select>
+                {errors.project_id && (
+                  <p className="mt-1 text-sm text-red-600">{errors.project_id}</p>
+                )}
+                <p className="mt-2 text-xs text-gray-500">
+                  💡 El dinero saldrá de la Caja Master de Nivexa
+                </p>
               </div>
             </div>
+
+            {/* Viability Analysis */}
+            {formData.project_id && (
+              <ProjectViabilityPanel
+                projectId={formData.project_id}
+                onAnalysisComplete={setViabilityAnalysis}
+              />
+            )}
 
             {/* Monto y Moneda */}
             <div>

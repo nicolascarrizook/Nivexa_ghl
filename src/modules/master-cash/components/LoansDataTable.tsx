@@ -13,13 +13,13 @@ interface Loan {
   total_paid: number;
   loan_date: string;
   due_date: string;
-  lender_project_name: string | null;
-  borrower_project_name: string | null;
-  total_installments: number;
-  paid_installments: number;
-  pending_installments: number;
-  overdue_installments: number;
-  next_payment_due: string | null;
+  installments_count: number;
+  viability_score: number | null;
+  risk_level: string | null;
+  projects?: {
+    name: string;
+    code: string;
+  };
 }
 
 interface LoansDataTableProps {
@@ -63,7 +63,7 @@ export function LoansDataTable({ loans }: LoansDataTableProps) {
               Código
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Prestador → Prestatario
+              Proyecto
             </th>
             <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
               Monto
@@ -72,13 +72,13 @@ export function LoansDataTable({ loans }: LoansDataTableProps) {
               Estado
             </th>
             <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Cuotas
+              Riesgo
             </th>
             <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
               Saldo Pendiente
             </th>
             <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Próximo Pago
+              Vencimiento
             </th>
             <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
               Acciones
@@ -103,12 +103,12 @@ export function LoansDataTable({ loans }: LoansDataTableProps) {
                   </div>
                 </td>
 
-                {/* Projects */}
+                {/* Project */}
                 <td className="px-4 py-4">
                   <div className="text-sm text-gray-900">
-                    <div className="font-medium">{loan.lender_project_name || 'N/A'}</div>
+                    <div className="font-medium">{loan.projects?.name || 'N/A'}</div>
                     <div className="text-gray-500 text-xs mt-1">
-                      → {loan.borrower_project_name || 'N/A'}
+                      {loan.projects?.code || ''}
                     </div>
                   </div>
                 </td>
@@ -136,20 +136,29 @@ export function LoansDataTable({ loans }: LoansDataTableProps) {
                   </span>
                 </td>
 
-                {/* Installments */}
+                {/* Risk Level */}
                 <td className="px-4 py-4 whitespace-nowrap text-center">
-                  <div className="text-sm text-gray-900">
-                    <div className="flex items-center justify-center gap-2">
-                      <span className="font-medium">
-                        {loan.paid_installments}/{loan.total_installments}
-                      </span>
+                  {loan.risk_level ? (
+                    <span className={cn(
+                      "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                      loan.risk_level === 'low' && "bg-green-100 text-green-700",
+                      loan.risk_level === 'medium' && "bg-yellow-100 text-yellow-700",
+                      loan.risk_level === 'high' && "bg-orange-100 text-orange-700",
+                      loan.risk_level === 'critical' && "bg-red-100 text-red-700"
+                    )}>
+                      {loan.risk_level === 'low' && 'Bajo'}
+                      {loan.risk_level === 'medium' && 'Medio'}
+                      {loan.risk_level === 'high' && 'Alto'}
+                      {loan.risk_level === 'critical' && 'Crítico'}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-gray-400">-</span>
+                  )}
+                  {loan.viability_score !== null && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      Score: {loan.viability_score}
                     </div>
-                    {loan.overdue_installments > 0 && (
-                      <div className="text-xs text-red-600 mt-1">
-                        {loan.overdue_installments} vencida(s)
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </td>
 
                 {/* Outstanding Balance */}
@@ -162,18 +171,14 @@ export function LoansDataTable({ loans }: LoansDataTableProps) {
                   </div>
                 </td>
 
-                {/* Next Payment */}
+                {/* Due Date */}
                 <td className="px-4 py-4 whitespace-nowrap text-center">
-                  {loan.next_payment_due ? (
-                    <div className="flex items-center justify-center">
-                      <Calendar className="h-4 w-4 text-gray-400 mr-1" />
-                      <span className="text-sm text-gray-900">
-                        {formatDate(loan.next_payment_due)}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-sm text-gray-400">-</span>
-                  )}
+                  <div className="flex items-center justify-center">
+                    <Calendar className="h-4 w-4 text-gray-400 mr-1" />
+                    <span className="text-sm text-gray-900">
+                      {formatDate(loan.due_date)}
+                    </span>
+                  </div>
                 </td>
 
                 {/* Actions */}
@@ -186,7 +191,7 @@ export function LoansDataTable({ loans }: LoansDataTableProps) {
                     >
                       <Eye className="h-4 w-4" />
                     </button>
-                    {loan.loan_status === 'active' && loan.pending_installments > 0 && (
+                    {loan.loan_status === 'active' && loan.outstanding_balance > 0 && (
                       <button
                         className="text-green-600 hover:text-green-900 transition-colors"
                         title="Registrar pago"
@@ -242,13 +247,13 @@ export function LoansDataTable({ loans }: LoansDataTableProps) {
                 <div>
                   <p className="text-sm text-gray-500">Prestador</p>
                   <p className="text-base font-medium text-gray-900">
-                    {selectedLoan.lender_project_name}
+                    Nivexa - Caja Master
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">Prestatario</p>
+                  <p className="text-sm text-gray-500">Proyecto</p>
                   <p className="text-base font-medium text-gray-900">
-                    {selectedLoan.borrower_project_name}
+                    {selectedLoan.projects?.name || 'N/A'}
                   </p>
                 </div>
                 <div>
@@ -275,21 +280,46 @@ export function LoansDataTable({ loans }: LoansDataTableProps) {
                     {formatDate(selectedLoan.due_date)}
                   </p>
                 </div>
+                {selectedLoan.risk_level && (
+                  <div>
+                    <p className="text-sm text-gray-500">Nivel de Riesgo</p>
+                    <span className={cn(
+                      "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                      selectedLoan.risk_level === 'low' && "bg-green-100 text-green-700",
+                      selectedLoan.risk_level === 'medium' && "bg-yellow-100 text-yellow-700",
+                      selectedLoan.risk_level === 'high' && "bg-orange-100 text-orange-700",
+                      selectedLoan.risk_level === 'critical' && "bg-red-100 text-red-700"
+                    )}>
+                      {selectedLoan.risk_level === 'low' && 'Bajo'}
+                      {selectedLoan.risk_level === 'medium' && 'Medio'}
+                      {selectedLoan.risk_level === 'high' && 'Alto'}
+                      {selectedLoan.risk_level === 'critical' && 'Crítico'}
+                    </span>
+                  </div>
+                )}
+                {selectedLoan.viability_score !== null && (
+                  <div>
+                    <p className="text-sm text-gray-500">Score de Viabilidad</p>
+                    <p className="text-base font-medium text-gray-900">
+                      {selectedLoan.viability_score}/100
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="pt-4 border-t">
-                <p className="text-sm text-gray-500 mb-2">Progreso de Cuotas</p>
+                <p className="text-sm text-gray-500 mb-2">Progreso del Préstamo</p>
                 <div className="flex items-center gap-4">
                   <div className="flex-1 bg-gray-200 rounded-full h-2">
                     <div
                       className="bg-green-600 h-2 rounded-full transition-all"
                       style={{
-                        width: `${(selectedLoan.paid_installments / selectedLoan.total_installments) * 100}%`
+                        width: `${(selectedLoan.total_paid / selectedLoan.amount) * 100}%`
                       }}
                     />
                   </div>
                   <span className="text-sm font-medium text-gray-900">
-                    {selectedLoan.paid_installments} / {selectedLoan.total_installments}
+                    {((selectedLoan.total_paid / selectedLoan.amount) * 100).toFixed(1)}% pagado
                   </span>
                 </div>
               </div>

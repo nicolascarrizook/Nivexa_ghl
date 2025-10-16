@@ -21,7 +21,10 @@
     "db:setup": "node scripts/setup-auth.js",
     "diagnose:cash": "npx tsx src/scripts/diagnose-cash-system.ts",
     "diagnose:detailed": "npx tsx src/scripts/diagnose-detailed.ts",
-    "fix:cash": "npx tsx src/scripts/fix-master-cash.ts"
+    "fix:cash": "npx tsx src/scripts/fix-master-cash.ts",
+    "fix:expenses": "npx tsx scripts/fix-cash-box-expenses.ts",
+    "check:cashbox": "npx tsx scripts/check-cash-box-state.ts",
+    "check:projects": "npx tsx scripts/check-client-projects.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -39,6 +42,7 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "@sentry/react": "^10.15.0",
     "@supabase/supabase-js": "^2.57.4",
     "@tailwindcss/vite": "^4.1.13",

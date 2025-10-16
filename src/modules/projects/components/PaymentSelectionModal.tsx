@@ -334,11 +334,40 @@ export function PaymentSelectionModal({
       key: "status",
       title: "Estado",
       width: 120,
-      render: (value: string) => (
-        <Badge variant={value === "paid" ? "success" : "default"} size="sm">
-          {value === "paid" ? "Pagado" : "Pendiente"}
-        </Badge>
-      ),
+      render: (value: string) => {
+        // Unified badge variants with design tokens semantics
+        const getVariant = () => {
+          switch (value) {
+            case "paid":
+              return "success";
+            case "pending":
+              return "warning";
+            case "overdue":
+              return "error";
+            default:
+              return "default";
+          }
+        };
+
+        const getLabel = () => {
+          switch (value) {
+            case "paid":
+              return "Pagado";
+            case "pending":
+              return "Pendiente";
+            case "overdue":
+              return "Vencido";
+            default:
+              return value;
+          }
+        };
+
+        return (
+          <Badge variant={getVariant()} size="sm">
+            {getLabel()}
+          </Badge>
+        );
+      },
     },
     {
       key: "actions",

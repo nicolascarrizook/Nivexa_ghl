@@ -29,6 +29,12 @@ export function AssignContractorModal({ isOpen, onClose, projectId, onSuccess }:
   const [loadingProviders, setLoadingProviders] = useState(true);
   const [assignedContractorIds, setAssignedContractorIds] = useState<string[]>([]);
 
+  // Parse date string as local date (avoid timezone issues)
+  const parseLocalDate = (dateString: string): Date => {
+    const [year, month, day] = dateString.split('T')[0].split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
   const [formData, setFormData] = useState<{
     contractor_id: string;
     contract_number: string;
@@ -425,7 +431,7 @@ export function AssignContractorModal({ isOpen, onClose, projectId, onSuccess }:
                       <div className="flex justify-between">
                         <span className="text-sm text-secondary">Fecha de Inicio:</span>
                         <span className="text-sm text-primary">
-                          {new Date(formData.start_date).toLocaleDateString('es-AR')}
+                          {parseLocalDate(formData.start_date).toLocaleDateString('es-AR')}
                         </span>
                       </div>
                     )}
@@ -433,7 +439,7 @@ export function AssignContractorModal({ isOpen, onClose, projectId, onSuccess }:
                       <div className="flex justify-between">
                         <span className="text-sm text-secondary">Fecha Estimada de Fin:</span>
                         <span className="text-sm text-primary">
-                          {new Date(formData.estimated_end_date).toLocaleDateString('es-AR')}
+                          {parseLocalDate(formData.estimated_end_date).toLocaleDateString('es-AR')}
                         </span>
                       </div>
                     )}

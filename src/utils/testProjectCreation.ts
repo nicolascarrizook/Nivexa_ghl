@@ -83,15 +83,15 @@ export async function testProjectCreation() {
       .single();
     
     const { data: finalProjectCash } = await supabase
-      .from('project_cash')
+      .from('project_cash_box')
       .select('*')
       .eq('project_id', project.id)
       .single();
 
     console.log(`  Caja Maestra: $${finalMasterCash?.balance?.toLocaleString('es-AR') || 0}`);
     console.log(`  Caja Admin: $${finalAdminCash?.balance?.toLocaleString('es-AR') || 0}`);
-    console.log(`  Caja del Proyecto: $${finalProjectCash?.balance?.toLocaleString('es-AR') || 0}`);
-    console.log(`  Total recibido en proyecto: $${finalProjectCash?.total_received?.toLocaleString('es-AR') || 0}\n`);
+    console.log(`  Caja del Proyecto ARS: $${finalProjectCash?.current_balance_ars?.toLocaleString('es-AR') || 0}`);
+    console.log(`  Caja del Proyecto USD: $${finalProjectCash?.current_balance_usd?.toLocaleString('es-AR') || 0}\n`);
 
     // 5. Verificar movimientos
     const { data: projectMovements } = await supabase

@@ -12,7 +12,7 @@ interface UseContractorBudgetResult {
   error: Error | null;
   summary: BudgetSummary | null;
   refetch: () => Promise<void>;
-  createItem: (data: ContractorBudgetInsert) => Promise<boolean>;
+  createItem: (data: ContractorBudgetInsert) => Promise<{ success: boolean; id?: string }>;
   updateItem: (id: string, data: ContractorBudgetUpdate) => Promise<boolean>;
   deleteItem: (id: string) => Promise<boolean>;
   duplicateItem: (id: string) => Promise<boolean>;
@@ -75,22 +75,22 @@ export function useContractorBudget(projectContractorId: string): UseContractorB
     await Promise.all([fetchBudgetItems(), fetchSummary()]);
   }, [fetchBudgetItems, fetchSummary]);
 
-  const createItem = useCallback(async (data: ContractorBudgetInsert): Promise<boolean> => {
+  const createItem = useCallback(async (data: ContractorBudgetInsert): Promise<{ success: boolean; id?: string }> => {
     setLoading(true);
     setError(null);
 
     try {
-      const { error: createError } = await contractorBudgetService.create(data);
+      const { data: createdItem, error: createError } = await contractorBudgetService.create(data);
 
       if (createError) {
         throw createError;
       }
 
       await refetch();
-      return true;
+      return { success: true, id: createdItem?.id };
     } catch (err) {
       setError(err as Error);
-      return false;
+      return { success: false };
     } finally {
       setLoading(false);
     }

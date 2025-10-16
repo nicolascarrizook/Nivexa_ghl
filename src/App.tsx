@@ -16,6 +16,9 @@ import { MasterCashPage } from '@/pages/MasterCashPage';
 import { AdminCashPage } from '@/pages/AdminCashPage';
 import { TestFinancePage } from '@/pages/TestFinancePage';
 import ProvidersPage from '@/pages/ProvidersPage';
+import { InvestorsPage } from '@/pages/InvestorsPage';
+import { InvestorProfilePage } from '@/pages/InvestorProfilePage';
+import { InvestorPortalPage } from '@/pages/InvestorPortalPage';
 import { Spinner } from '@/design-system/components/feedback';
 import { Sidebar } from '@/components/navigation';
 import { useState } from 'react';
@@ -85,6 +88,9 @@ function App() {
           </PublicRoute>
         } />
 
+      {/* Investor Portal - Public with token authentication */}
+      <Route path="/investor/:token" element={<InvestorPortalPage />} />
+
       {/* Protected routes */}
       <Route path="/dashboard" element={
         <ProtectedRoute>
@@ -128,7 +134,19 @@ function App() {
           <ProvidersPage />
         </ProtectedRoute>
       } />
-      
+
+      <Route path="/investors" element={
+        <ProtectedRoute>
+          <InvestorsPage />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/investors/:investorId" element={
+        <ProtectedRoute>
+          <InvestorProfilePage />
+        </ProtectedRoute>
+      } />
+
       <Route path="/calendar" element={
         <ProtectedRoute>
           <CalendarPage />

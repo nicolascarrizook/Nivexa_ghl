@@ -1,7 +1,14 @@
-import { useState } from 'react';
-import { Briefcase, FileText } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Briefcase, FileText, BarChart3, GitBranch } from 'lucide-react';
 import Modal from '@/design-system/components/feedback/Modal';
 import { BudgetSection } from './BudgetSection';
+import { ContractorDashboard } from './ContractorDashboard';
+import { TimelineSection } from './TimelineSection';
+import { useContractorPayments, useContractorBudget } from '../hooks';
+import { supabase } from '@/config/supabase';
+import type { Database } from '@/types/database.types';
+
+type ProjectContractor = Database['public']['Tables']['project_contractors']['Row'];
 
 interface ManageWorkModalProps {
   isOpen: boolean;
@@ -11,6 +18,8 @@ interface ManageWorkModalProps {
 }
 
 const TABS = [
+  { id: 'dashboard', title: 'Dashboard', icon: BarChart3, description: 'Métricas y alertas' },
+  { id: 'timeline', title: 'Cronograma', icon: GitBranch, description: 'Timeline y cumplimiento' },
   { id: 'work', title: 'Trabajo', icon: Briefcase, description: 'Gestionar trabajo del proveedor' },
   { id: 'summary', title: 'Resumen', icon: FileText, description: 'Vista detallada' }
 ];
@@ -21,10 +30,94 @@ export function ManageWorkModal({
   projectContractorId,
   contractorName,
 }: ManageWorkModalProps) {
-  const [activeTab, setActiveTab] = useState<'work' | 'summary'>('work');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'timeline' | 'work' | 'summary'>('dashboard');
+  const [contractor, setContractor] = useState<ProjectContractor | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const { payments } = useContractorPayments(projectContractorId);
+  const { summary: budgetSummary } = useContractorBudget(projectContractorId);
+
+  useEffect(() => {
+    const fetchContractor = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('project_contractors')
+        .select('*')
+        .eq('id', projectContractorId)
+        .single();
+
+      if (!error && data) {
+        setContractor(data);
+      }
+      setLoading(false);
+    };
+
+    if (isOpen && projectContractorId) {
+      fetchContractor();
+    }
+  }, [isOpen, projectContractorId]);
 
   const renderTabContent = () => {
+    if (loading) {
+      return (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="animate-pulse space-y-4">
+            <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+            <div className="space-y-3">
+              <div className="h-12 bg-gray-200 rounded"></div>
+              <div className="h-12 bg-gray-200 rounded"></div>
+              <div className="h-12 bg-gray-200 rounded"></div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     switch (activeTab) {
+      case 'dashboard':
+        if (!contractor) return null;
+        return (
+          <div>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-gray-100 rounded-lg">
+                <BarChart3 className="h-5 w-5 text-gray-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-light text-primary">Dashboard</h2>
+                <p className="text-sm text-tertiary">Métricas clave y alertas del proveedor</p>
+              </div>
+            </div>
+
+            <ContractorDashboard
+              contractor={contractor}
+              payments={payments}
+              totalBudget={budgetSummary?.grand_total || 0}
+            />
+          </div>
+        );
+
+      case 'timeline':
+        if (!contractor) return null;
+        return (
+          <div>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-gray-100 rounded-lg">
+                <GitBranch className="h-5 w-5 text-gray-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-light text-primary">Cronograma</h2>
+                <p className="text-sm text-tertiary">Timeline del proyecto y métricas de cumplimiento</p>
+              </div>
+            </div>
+
+            <TimelineSection
+              contractor={contractor}
+              payments={payments}
+              totalBudget={budgetSummary?.grand_total || 0}
+            />
+          </div>
+        );
+
       case 'work':
         return (
           <div>

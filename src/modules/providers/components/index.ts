@@ -5,3 +5,7 @@ export { PaymentSection } from './PaymentSection';
 export { AssignContractorModal } from './AssignContractorModal';
 export { ManagePaymentsModal } from './ManagePaymentsModal';
 export { ManageWorkModal } from './ManageWorkModal';
+export { CurrencyBadge } from './CurrencyBadge';
+export { PaymentStatusBadge } from './PaymentStatusBadge';
+export { ContractorDashboard } from './ContractorDashboard';
+export { TimelineSection } from './TimelineSection';

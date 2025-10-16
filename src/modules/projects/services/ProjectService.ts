@@ -108,12 +108,13 @@ export class ProjectService extends BaseService<'projects'> {
    * Creates client in clients table if it doesn't exist (when no clientId provided)
    */
   async createProjectFromForm(formData: ProjectFormData): Promise<ProjectWithDetails | null> {
-    // If no clientId, create the client first
+    // If no clientId, find existing client or create new one
     let clientId = formData.clientId;
 
     if (!clientId && formData.clientName) {
       try {
-        const newClient = await clientService.createClient({
+        // Use findOrCreateClient to prevent duplicates
+        const client = await clientService.findOrCreateClient({
           name: formData.clientName,
           email: formData.clientEmail || null,
           phone: formData.clientPhone || null,
@@ -122,16 +123,21 @@ export class ProjectService extends BaseService<'projects'> {
           city: formData.city || null,
         });
 
-        clientId = newClient.id;
-        console.log('Created new client from project wizard:', clientId);
+        clientId = client.id;
+        console.log('✅ Client ready for project:', clientId, '-', client.name);
       } catch (error) {
-        console.error('Error creating client from project wizard:', error);
-        // Continue with project creation even if client creation fails
-        // Project will still have client data in denormalized fields
+        console.error('❌ Error finding/creating client from project wizard:', error);
+        // Don't continue if client resolution fails - this would leave the project orphaned
+        throw new Error(`No se pudo obtener o crear el cliente: ${error instanceof Error ? error.message : 'Error desconocido'}. Por favor, intente nuevamente.`);
       }
     }
 
-    // Update formData with the new client ID
+    // Validate that we have a client ID if client name was provided
+    if (formData.clientName && !clientId) {
+      throw new Error('Se especificó un cliente pero no se pudo obtener su ID. Por favor, verifique los datos del cliente.');
+    }
+
+    // Update formData with the client ID (existing or newly created)
     const updatedFormData = {
       ...formData,
       clientId: clientId,
@@ -461,6 +467,7 @@ export class ProjectService extends BaseService<'projects'> {
             currency: currency,
             description: `Honorarios ${project.admin_fee_percentage}% - Anticipo ${project.name}`,
             projectId: projectId,
+            percentage: project.admin_fee_percentage,
           });
 
           console.log(`✅ Admin fees automatically liquidated: ${feeAmount} ${currency} (${project.admin_fee_percentage}%)`);
@@ -574,6 +581,7 @@ export class ProjectService extends BaseService<'projects'> {
           total_income_usd
         )
       `)
+      .is('deleted_at', null) // Only show active (non-deleted) projects
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -618,6 +626,93 @@ export class ProjectService extends BaseService<'projects'> {
    */
   async getProjectsWithCash(): Promise<ProjectWithDetails[]> {
     return this.getProjects();
+  }
+
+  /**
+   * Get all projects for a specific client
+   */
+  async getProjectsByClient(clientId: string): Promise<ProjectWithDetails[]> {
+    console.log('🔍 getProjectsByClient: Buscando proyectos para client_id:', clientId);
+
+    const { data, error } = await supabase
+      .from(this.tableName)
+      .select(`
+        *,
+        project_cash_box(
+          current_balance_ars,
+          current_balance_usd,
+          total_income_ars,
+          total_income_usd
+        )
+      `)
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ Error en query de proyectos:', error);
+      throw error;
+    }
+
+    console.log(`✅ Query retornó ${data?.length || 0} proyectos:`, data?.map(p => ({
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      status: p.status,
+      client_id: p.client_id
+    })));
+
+    // Calculate progress and next payments for each project using Promise.allSettled
+    // This ensures we process all projects even if some fail
+    const projectsWithDetailsSettled = await Promise.allSettled(
+      (data || []).map(async (project) => {
+        try {
+          console.log(`📊 Procesando proyecto: ${project.name} (${project.code})`);
+          const progress = await this.calculateProgress(project.id);
+          const nextPayment = await this.getNextPayment(project.id);
+
+          return {
+            ...project,
+            id: project.id,
+            projectName: project.name || 'Sin nombre',
+            projectType: project.project_type || 'other',
+            status: project.status || 'draft',
+            totalAmount: project.total_amount || 0,
+            client_name: project.client_name || 'Sin cliente',
+            progress: progress.percentageComplete || 0,
+            installmentCount: project.installments_count || 12,
+            downPayment: project.down_payment_amount || 0,
+            downPaymentPercentage: project.down_payment_percentage || 0,
+            total_collected: progress.totalPaid || 0,
+            next_payment_date: nextPayment?.due_date,
+            next_payment_amount: nextPayment?.amount || 0,
+            paid_amount: progress.totalPaid,
+            progress_percentage: progress.percentageComplete,
+            project_cash_box: Array.isArray(project.project_cash_box)
+              ? project.project_cash_box[0]
+              : project.project_cash_box,
+          } as ProjectWithDetails;
+        } catch (error) {
+          console.error(`❌ Error procesando proyecto ${project.name} (${project.code}):`, error);
+          throw error;
+        }
+      })
+    );
+
+    // Filter successful results and log failures
+    const projectsWithDetails = projectsWithDetailsSettled
+      .map((result, index) => {
+        if (result.status === 'fulfilled') {
+          console.log(`✅ Proyecto ${index + 1} procesado exitosamente`);
+          return result.value;
+        } else {
+          console.error(`❌ Proyecto ${index + 1} falló:`, result.reason);
+          return null;
+        }
+      })
+      .filter((p): p is ProjectWithDetails => p !== null);
+
+    console.log(`📋 Retornando ${projectsWithDetails.length} de ${data?.length || 0} proyectos`);
+    return projectsWithDetails;
   }
 
   /**
@@ -688,7 +783,9 @@ export class ProjectService extends BaseService<'projects'> {
           current_balance_ars,
           current_balance_usd,
           total_income_ars,
-          total_income_usd
+          total_income_usd,
+          total_expenses_ars,
+          total_expenses_usd
         ),
         installments(
           *
@@ -757,11 +854,74 @@ export class ProjectService extends BaseService<'projects'> {
   }
 
   /**
-   * Delete project (with compatibility layer)
+   * Delete project (SOFT DELETE - preserves financial history)
+   * Projects are never physically deleted to maintain audit trail
    */
   async deleteProject(id: string): Promise<boolean> {
-    const result = await this.delete(id);
-    return result.data || false;
+    try {
+      // Verify project exists
+      const project = await this.getById(id);
+      if (!project.data) {
+        throw new Error('Proyecto no encontrado');
+      }
+
+      // Check if project has financial movements
+      const { data: movements } = await supabase
+        .from('cash_movements')
+        .select('id')
+        .eq('project_id', id)
+        .limit(1);
+
+      if (movements && movements.length > 0) {
+        console.log(`⚠️  Proyecto ${id} tiene movimientos financieros - usando soft delete`);
+      }
+
+      // Soft delete: mark as deleted instead of removing
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          deleted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error soft-deleting project:', error);
+        throw error;
+      }
+
+      console.log(`✅ Proyecto soft-deleted: ${id}`);
+      return true;
+    } catch (error) {
+      console.error('Error in deleteProject:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Restore a soft-deleted project
+   */
+  async restoreProject(id: string): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          deleted_at: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error restoring project:', error);
+        throw error;
+      }
+
+      console.log(`✅ Proyecto restaurado: ${id}`);
+      return true;
+    } catch (error) {
+      console.error('Error in restoreProject:', error);
+      return false;
+    }
   }
 
   /**

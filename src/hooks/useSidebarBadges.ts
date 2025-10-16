@@ -20,6 +20,7 @@ export function useSidebarBadges(): SidebarBadges {
       const { count, error } = await supabase
         .from('projects')
         .select('*', { count: 'exact', head: true })
+        .is('deleted_at', null)
         .in('status', ['active', 'in_progress']);
 
       if (error) {

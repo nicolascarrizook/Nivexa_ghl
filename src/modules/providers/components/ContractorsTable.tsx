@@ -2,6 +2,12 @@ import { useState } from 'react';
 import { Edit2, Trash2, DollarSign, Briefcase } from 'lucide-react';
 import type { ProjectContractorWithDetails } from '../services';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface ContractorsTableProps {
   contractors: ProjectContractorWithDetails[];
@@ -100,9 +106,10 @@ export function ContractorsTable({
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full">
+    <TooltipProvider>
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -136,6 +143,11 @@ export function ContractorsTable({
               const balanceDue = contractor.financial_summary?.balance_due || budgetAmount;
               const progressPercentage = contractor.financial_summary?.payment_progress_percentage ?? contractor.progress_percentage ?? 0;
 
+              // Determinar si el botón de pagos debe estar habilitado
+              const hasProjectAssociation = !!contractor.project_id;
+              const hasBudget = budgetAmount > 0;
+              const canManagePayments = hasProjectAssociation && hasBudget;
+
               console.log('ContractorsTable - Contractor Row Data:', {
                 contractor_id: contractor.id,
                 contractor_name: contractor.provider?.name,
@@ -143,6 +155,9 @@ export function ContractorsTable({
                 totalPaid,
                 balanceDue,
                 progressPercentage,
+                hasProjectAssociation,
+                hasBudget,
+                canManagePayments,
                 financial_summary: contractor.financial_summary,
                 progress_percentage: contractor.progress_percentage,
               });
@@ -202,40 +217,104 @@ export function ContractorsTable({
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
                       {onManagePayments && (
-                        <button
-                          onClick={() => onManagePayments(contractor.id)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                          title="Gestionar Pagos"
-                        >
-                          <DollarSign className="w-4 h-4" />
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => canManagePayments && onManagePayments(contractor.id)}
+                              disabled={!canManagePayments}
+                              className={`p-2 rounded-lg transition-colors ${
+                                canManagePayments
+                                  ? 'text-blue-600 hover:bg-blue-50 cursor-pointer'
+                                  : 'text-gray-300 cursor-not-allowed bg-gray-50'
+                              }`}
+                              aria-label={
+                                canManagePayments
+                                  ? 'Gestionar pagos del proveedor'
+                                  : 'No se pueden gestionar pagos'
+                              }
+                            >
+                              <DollarSign className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {canManagePayments ? (
+                              <>
+                                <p className="font-medium">Gestionar Pagos</p>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  Ver y registrar pagos realizados al proveedor
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="font-medium text-orange-600">Pagos Deshabilitados</p>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  {!hasProjectAssociation
+                                    ? 'El proveedor no tiene proyecto asociado'
+                                    : !hasBudget
+                                    ? 'El proveedor no tiene presupuesto configurado'
+                                    : 'No se pueden gestionar pagos en este momento'}
+                                </p>
+                              </>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                       {onManageWork && (
-                        <button
-                          onClick={() => onManageWork(contractor.id)}
-                          className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-                          title="Gestionar Trabajo"
-                        >
-                          <Briefcase className="w-4 h-4" />
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => onManageWork(contractor.id)}
+                              className="p-2 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                              aria-label="Gestionar trabajo del proveedor"
+                            >
+                              <Briefcase className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-medium">Gestionar Trabajo</p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              Actualizar progreso y tareas del proveedor
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                       {onEdit && (
-                        <button
-                          onClick={() => onEdit(contractor)}
-                          className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                          title="Editar"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => onEdit(contractor)}
+                              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                              aria-label="Editar proveedor"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-medium">Editar</p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              Modificar información del proveedor
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                       {onDelete && (
-                        <button
-                          onClick={() => handleDeleteClick(contractor)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              onClick={() => handleDeleteClick(contractor)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              aria-label="Eliminar proveedor"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="font-medium">Eliminar</p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              Remover proveedor del proyecto
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                     </div>
                   </td>
@@ -257,6 +336,7 @@ export function ContractorsTable({
         cancelText="Cancelar"
         variant="danger"
       />
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

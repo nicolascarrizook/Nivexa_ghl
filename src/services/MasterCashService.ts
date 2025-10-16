@@ -244,7 +244,29 @@ class MasterCashService {
         return false;
       }
 
-      // Create cash movement (for cash flow tracking) with currency support
+      // Capture balance snapshots BEFORE fee collection
+      const masterBalanceBefore = {
+        ars: masterCash.balance_ars || masterCash.balance || 0,
+        usd: masterCash.balance_usd || 0,
+      };
+
+      const adminBalanceBefore = {
+        ars: adminCash.balance_ars || adminCash.balance || 0,
+        usd: adminCash.balance_usd || 0,
+      };
+
+      // Calculate balance AFTER fee collection
+      const masterBalanceAfter = {
+        ars: currency === 'ARS' ? masterBalanceBefore.ars - amount : masterBalanceBefore.ars,
+        usd: currency === 'USD' ? masterBalanceBefore.usd - amount : masterBalanceBefore.usd,
+      };
+
+      const adminBalanceAfter = {
+        ars: currency === 'ARS' ? adminBalanceBefore.ars + amount : adminBalanceBefore.ars,
+        usd: currency === 'USD' ? adminBalanceBefore.usd + amount : adminBalanceBefore.usd,
+      };
+
+      // Create cash movement (for cash flow tracking) with currency support and snapshots
       const { error: movementError } = await supabase
         .from('cash_movements')
         .insert({
@@ -259,6 +281,14 @@ class MasterCashService {
           description: `Cobro de honorarios ${currency} - ${reason}`,
           fee_collection_id: feeCollection.id,
           project_id: projectId || null,
+          balance_before_ars: masterBalanceBefore.ars,
+          balance_after_ars: masterBalanceAfter.ars,
+          balance_before_usd: masterBalanceBefore.usd,
+          balance_after_usd: masterBalanceAfter.usd,
+          metadata: {
+            adminBalanceBefore,
+            adminBalanceAfter,
+          },
         });
 
       if (movementError) {
@@ -357,10 +387,10 @@ class MasterCashService {
         .single();
 
       const { data: projectCashes } = await supabase
-        .from('project_cash')
-        .select('balance');
+        .from('project_cash_box')
+        .select('current_balance_ars, current_balance_usd');
 
-      const totalProjectsBalance = projectCashes?.reduce((sum: number, p: any) => sum + p.balance, 0) || 0;
+      const totalProjectsBalance = projectCashes?.reduce((sum: number, p: any) => sum + (p.current_balance_ars || 0), 0) || 0;
 
       const masterBalanceArs = masterCash?.balance_ars || masterCash?.balance || 0;
       const masterBalanceUsd = masterCash?.balance_usd || 0;
@@ -426,10 +456,11 @@ class MasterCashService {
 
       const monthlyFees = feeMovements?.reduce((sum: number, m: any) => sum + m.amount, 0) || 0;
 
-      // Get monthly projects count
+      // Get monthly projects count (exclude soft-deleted)
       const { count: monthlyProjects } = await supabase
         .from('projects')
         .select('*', { count: 'exact', head: true })
+        .is('deleted_at', null)
         .gte('created_at', startOfMonth.toISOString());
 
       return {

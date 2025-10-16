@@ -20,6 +20,11 @@ interface AuditMovement {
   metadata?: any;
   created_at: string;
   created_by?: string;
+  // Balance snapshots
+  balance_before_ars?: number;
+  balance_after_ars?: number;
+  balance_before_usd?: number;
+  balance_after_usd?: number;
   // Información expandida
   source_name?: string;
   destination_name?: string;
@@ -103,26 +108,29 @@ export function AuditTrailTable({ limit, projectId, showFilters = true }: AuditT
       if (error) throw error;
 
       // Obtener todos los IDs únicos de proyectos mencionados en movimientos
+      // IMPORTANTE: source_id y destination_id cuando type='project' son IDs de CAJAS, no de proyectos
+      // Solo usamos project_id que es el ID real del proyecto
       const projectIds = new Set<string>();
       (data || []).forEach((movement) => {
-        if (movement.source_type === 'project' && movement.source_id) {
-          projectIds.add(movement.source_id);
-        }
-        if (movement.destination_type === 'project' && movement.destination_id) {
-          projectIds.add(movement.destination_id);
+        if (movement.project_id) {
+          projectIds.add(movement.project_id);
         }
       });
 
-      // Cargar todos los proyectos de una sola vez
+      // Cargar todos los proyectos de una sola vez (INCLUYENDO ELIMINADOS para historial)
       const projectsMap = new Map<string, string>();
       if (projectIds.size > 0) {
         const { data: projects } = await supabase
           .from('projects')
-          .select('id, name')
+          .select('id, name, deleted_at')
           .in('id', Array.from(projectIds));
 
         projects?.forEach((project) => {
-          projectsMap.set(project.id, project.name);
+          // Si está eliminado, agregar indicador
+          const displayName = project.deleted_at
+            ? `${project.name} (Eliminado)`
+            : project.name;
+          projectsMap.set(project.id, displayName);
         });
       }
 
@@ -137,28 +145,30 @@ export function AuditTrailTable({ limit, projectId, showFilters = true }: AuditT
         };
 
         // Obtener nombre de origen
-        if (movement.source_type === 'project' && movement.source_id) {
-          const projectName = projectsMap.get(movement.source_id);
+        // Si es un proyecto, usar project_id (source_id es el ID de la caja, no del proyecto)
+        if (movement.source_type === 'project' && movement.project_id) {
+          const projectName = projectsMap.get(movement.project_id);
           if (projectName) {
             enriched.source_name = projectName;
           } else {
-            // Proyecto fue eliminado - mostrar ID parcial para referencia
-            const shortId = movement.source_id.substring(0, 8);
-            enriched.source_name = `Proyecto Eliminado (${shortId})`;
+            // Proyecto no existe en BD (hard-deleted antes de soft delete)
+            const shortId = movement.project_id.substring(0, 8);
+            enriched.source_name = `Proyecto No Encontrado (${shortId})`;
           }
         } else if (movement.source_type) {
           enriched.source_name = sourceTypeLabels[movement.source_type] || movement.source_type;
         }
 
         // Obtener nombre de destino
-        if (movement.destination_type === 'project' && movement.destination_id) {
-          const projectName = projectsMap.get(movement.destination_id);
+        // Si es un proyecto, usar project_id (destination_id es el ID de la caja, no del proyecto)
+        if (movement.destination_type === 'project' && movement.project_id) {
+          const projectName = projectsMap.get(movement.project_id);
           if (projectName) {
             enriched.destination_name = projectName;
           } else {
-            // Proyecto fue eliminado - mostrar ID parcial para referencia
-            const shortId = movement.destination_id.substring(0, 8);
-            enriched.destination_name = `Proyecto Eliminado (${shortId})`;
+            // Proyecto no existe en BD (hard-deleted antes de soft delete)
+            const shortId = movement.project_id.substring(0, 8);
+            enriched.destination_name = `Proyecto No Encontrado (${shortId})`;
           }
         } else if (movement.destination_type) {
           enriched.destination_name = sourceTypeLabels[movement.destination_type] || movement.destination_type;
@@ -290,6 +300,28 @@ export function AuditTrailTable({ limit, projectId, showFilters = true }: AuditT
       },
     },
     {
+      key: 'balance_before',
+      title: 'Saldo Anterior',
+      render: (value, movement) => {
+        if (!movement) return <span>-</span>;
+        const currency = movement.currency || 'ARS';
+        const balanceBefore = currency === 'ARS'
+          ? movement.balance_before_ars
+          : movement.balance_before_usd;
+
+        // Para movimientos históricos sin snapshot, mostrar $0
+        const displayBalance = balanceBefore ?? 0;
+
+        return (
+          <div className="text-right">
+            <p className="text-sm text-gray-600">
+              {formatAmount(displayBalance, currency)}
+            </p>
+          </div>
+        );
+      },
+    },
+    {
       key: 'amount',
       title: 'Monto',
       render: (value, movement) => {
@@ -304,6 +336,28 @@ export function AuditTrailTable({ limit, projectId, showFilters = true }: AuditT
                 TC: {movement.metadata.exchange_rate}
               </p>
             )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'balance_after',
+      title: 'Saldo Nuevo',
+      render: (value, movement) => {
+        if (!movement) return <span>-</span>;
+        const currency = movement.currency || 'ARS';
+        const balanceAfter = currency === 'ARS'
+          ? movement.balance_after_ars
+          : movement.balance_after_usd;
+
+        // Para movimientos históricos sin snapshot, mostrar $0
+        const displayBalance = balanceAfter ?? 0;
+
+        return (
+          <div className="text-right">
+            <p className="text-sm font-bold text-green-600">
+              {formatAmount(displayBalance, currency)}
+            </p>
           </div>
         );
       },

@@ -1,5 +1,7 @@
 import { supabase } from "@/config/supabase";
 import { Badge } from "@/design-system/components/data-display/Badge/Badge";
+import { AdminExpenseModal } from "@/modules/finance/components/AdminExpenseModal";
+import { CurrencyConversionModal } from "@/modules/finance/components/CurrencyConversionModal";
 import DataTable from "@/design-system/components/data-display/DataTable/DataTable";
 import MetricGrid from "@/design-system/components/data-display/MetricGrid/MetricGrid";
 import type { StatCardProps } from "@/design-system/components/data-display/StatCard/StatCard";
@@ -17,6 +19,7 @@ import {
   AlertCircle,
   ArrowDownRight,
   ArrowLeft,
+  ArrowLeftRight,
   ArrowUpRight,
   CheckCircle2,
   ChevronRight,
@@ -24,6 +27,7 @@ import {
   FileText,
   Home,
   Info,
+  MinusCircle,
   PiggyBank,
   RefreshCw,
   TrendingDown,
@@ -55,6 +59,8 @@ export function AdminCashPage() {
     monthlyExpensesARS: 0,
     monthlyExpensesUSD: 0,
   });
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [isConversionModalOpen, setIsConversionModalOpen] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -66,6 +72,14 @@ export function AdminCashPage() {
       // Get admin cash data
       const adminCashData = await newCashBoxService.getAdminCash();
       setAdminCash(adminCashData);
+
+      // Calculate start of month for filtering
+      const currentMonth = new Date();
+      const startOfMonth = new Date(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth(),
+        1
+      );
 
       // Get admin cash movements if admin cash exists
       let movementsData: CashMovement[] = [];
@@ -79,31 +93,14 @@ export function AdminCashPage() {
         setMovements(movementsData);
       }
 
-      // Get collected fees for this month
-      const { data: collectedFeesData } = await supabase
-        .from("administrator_fees")
-        .select(
-          `
-          *,
-          projects!inner(
-            code,
-            name,
-            client_name
-          )
-        `
-        )
-        .eq("status", "collected")
-        .gte(
-          "collected_at",
-          new Date(
-            new Date().getFullYear(),
-            new Date().getMonth(),
-            1
-          ).toISOString()
-        )
-        .order("collected_at", { ascending: false });
+      // Get collected fees for this month from cash_movements
+      const monthlyFeeMovements = movementsData?.filter(
+        (m) =>
+          m.movement_type === "fee_collection" &&
+          new Date(m.created_at) >= startOfMonth
+      ) || [];
 
-      setCollectedFees(collectedFeesData || []);
+      setCollectedFees(monthlyFeeMovements as any);
 
       // Get projects for reference
       const { data: projectsData } = await supabase
@@ -113,34 +110,26 @@ export function AdminCashPage() {
 
       setProjects(projectsData || []);
 
-      // Calculate monthly stats
-      const currentMonth = new Date();
-      const startOfMonth = new Date(
-        currentMonth.getFullYear(),
-        currentMonth.getMonth(),
-        1
-      );
-
       const monthMovements =
         movementsData?.filter((m) => new Date(m.created_at) >= startOfMonth) ||
         [];
 
-      // Calculate monthly collected fees by currency
-      const monthlyCollectedARS =
-        collectedFeesData?.filter(f => f.currency === 'ARS')
-          .reduce((sum, fee) => sum + (fee.collected_amount || 0), 0) || 0;
+      // Calculate monthly collected fees by currency from cash_movements
+      const monthlyCollectedARS = monthMovements
+        .filter((m) => m.movement_type === "fee_collection" && m.metadata?.currency === 'ARS')
+        .reduce((sum, m) => sum + (m.amount || 0), 0);
 
-      const monthlyCollectedUSD =
-        collectedFeesData?.filter(f => f.currency === 'USD')
-          .reduce((sum, fee) => sum + (fee.collected_amount || 0), 0) || 0;
+      const monthlyCollectedUSD = monthMovements
+        .filter((m) => m.movement_type === "fee_collection" && m.metadata?.currency === 'USD')
+        .reduce((sum, m) => sum + (m.amount || 0), 0);
 
-      // Calculate monthly expenses by currency
+      // Calculate monthly expenses by currency (includes both operational and admin expenses)
       const monthlyExpensesARS = monthMovements
-        .filter((m) => m.movement_type === "operational_expense" && m.metadata?.currency === 'ARS')
+        .filter((m) => (m.movement_type === "expense" || m.movement_type === "operational_expense") && m.metadata?.currency === 'ARS')
         .reduce((sum, m) => sum + (m.amount || 0), 0);
 
       const monthlyExpensesUSD = monthMovements
-        .filter((m) => m.movement_type === "operational_expense" && m.metadata?.currency === 'USD')
+        .filter((m) => (m.movement_type === "expense" || m.movement_type === "operational_expense") && m.metadata?.currency === 'USD')
         .reduce((sum, m) => sum + (m.amount || 0), 0);
 
       setMonthlyStats({
@@ -192,12 +181,14 @@ export function AdminCashPage() {
 
   const getMovementTypeBadge = (type: string) => {
     switch (type) {
+      case "fee_collection":
       case "admin_fee_collection":
         return (
           <Badge variant="success" size="sm" className="text-xs px-2 py-0.5">
             Honorario
           </Badge>
         );
+      case "expense":
       case "operational_expense":
         return (
           <Badge variant="error" size="sm" className="text-xs px-2 py-0.5">
@@ -231,6 +222,18 @@ export function AdminCashPage() {
     }
   };
 
+  const getCategoryLabel = (category: string) => {
+    const categories: Record<string, { label: string; icon: string }> = {
+      personal: { label: 'Gastos Personales', icon: '👤' },
+      rent: { label: 'Alquiler', icon: '🏠' },
+      utilities: { label: 'Servicios', icon: '💡' },
+      services: { label: 'Profesionales', icon: '🔧' },
+      provider: { label: 'Proveedores', icon: '🤝' },
+      other: { label: 'Otros', icon: '📝' },
+    };
+    return categories[category] || { label: category, icon: '📝' };
+  };
+
   // Filter movements based on selected filter
   const filteredMovements = movements.filter((movement) => {
     if (movementFilter === "all") return true;
@@ -261,9 +264,25 @@ export function AdminCashPage() {
     {
       key: "description",
       title: "Descripción",
-      render: (value: string) => (
-        <span className="text-xs text-gray-900">{value}</span>
-      ),
+      render: (value: string, record: CashMovement) => {
+        const isExpense = record.movement_type === 'expense' && record.metadata?.expenseType === 'admin';
+        const category = record.metadata?.category;
+
+        if (isExpense && category) {
+          const categoryInfo = getCategoryLabel(category);
+          return (
+            <div className="flex items-center space-x-2">
+              <span className="text-base">{categoryInfo.icon}</span>
+              <div>
+                <div className="text-xs font-medium text-gray-900">{value}</div>
+                <div className="text-xs text-gray-500">{categoryInfo.label}</div>
+              </div>
+            </div>
+          );
+        }
+
+        return <span className="text-xs text-gray-900">{value}</span>;
+      },
     },
     {
       key: "amount",
@@ -289,7 +308,7 @@ export function AdminCashPage() {
   // Prepare data for collected fees table
   const collectedFeesColumns = [
     {
-      key: "collected_at",
+      key: "created_at",
       title: "Fecha",
       sortable: true,
       render: (value: string) => (
@@ -311,26 +330,28 @@ export function AdminCashPage() {
       },
     },
     {
-      key: "fee_percentage",
+      key: "metadata",
       title: "%",
-      render: (value: number) => (
-        <span className="text-xs text-gray-900">{value}%</span>
+      render: (metadata: any) => (
+        <span className="text-xs text-gray-900">
+          {metadata?.percentage || 0}%
+        </span>
       ),
     },
     {
-      key: "currency",
+      key: "metadata",
       title: "Moneda",
-      render: (value: string) => (
-        <span className="text-xs text-gray-900">{value}</span>
+      render: (metadata: any) => (
+        <span className="text-xs text-gray-900">{metadata?.currency || 'ARS'}</span>
       ),
     },
     {
-      key: "collected_amount",
+      key: "amount",
       title: "Monto",
       align: "right" as const,
       render: (value: number, record: any) => (
         <span className="text-xs font-medium text-green-600">
-          {currencyService.formatCurrency(value, record.currency || 'ARS')}
+          {currencyService.formatCurrency(value, record.metadata?.currency || 'ARS')}
         </span>
       ),
     },
@@ -452,14 +473,14 @@ export function AdminCashPage() {
                     title: 'Cobrado en el Mes (ARS)',
                     value: currencyService.formatCurrency(monthlyStats.monthlyCollectedARS, 'ARS'),
                     icon: TrendingUp,
-                    description: `${collectedFees.filter(f => f.currency === 'ARS').length} cobros`,
+                    description: `${collectedFees.filter((f: any) => f.metadata?.currency === 'ARS').length} cobros`,
                     variant: 'info',
                   },
                   {
                     title: 'Cobrado en el Mes (USD)',
                     value: `U$S ${monthlyStats.monthlyCollectedUSD.toFixed(2)}`,
                     icon: TrendingUp,
-                    description: `${collectedFees.filter(f => f.currency === 'USD').length} cobros`,
+                    description: `${collectedFees.filter((f: any) => f.metadata?.currency === 'USD').length} cobros`,
                     variant: 'info',
                   },
                   {
@@ -535,7 +556,47 @@ export function AdminCashPage() {
             </div>
           </div>
           <div className="px-6 py-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <button
+                onClick={() => setIsExpenseModalOpen(true)}
+                className="flex items-center justify-between p-4 bg-red-50 rounded-lg hover:bg-red-100 transition-colors border-2 border-red-200"
+              >
+                <div className="flex items-center">
+                  <div className="p-2 bg-red-100 rounded-lg mr-3">
+                    <MinusCircle className="h-5 w-5 text-red-600" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-gray-900">
+                      Registrar Gasto
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      Gastos administrativos
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="h-5 w-5 text-gray-400" />
+              </button>
+
+              <button
+                onClick={() => setIsConversionModalOpen(true)}
+                className="flex items-center justify-between p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors border-2 border-blue-200"
+              >
+                <div className="flex items-center">
+                  <div className="p-2 bg-blue-100 rounded-lg mr-3">
+                    <ArrowLeftRight className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-gray-900">
+                      Convertir Divisas
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      Pesos ⇄ Dólares
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="h-5 w-5 text-gray-400" />
+              </button>
+
               <button
                 onClick={() => navigate("/finance/reports")}
                 className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
@@ -634,6 +695,30 @@ export function AdminCashPage() {
             </div>
         </SectionCard>
       </div>
+
+      {/* Admin Expense Modal */}
+      <AdminExpenseModal
+        isOpen={isExpenseModalOpen}
+        onClose={() => setIsExpenseModalOpen(false)}
+        onSuccess={() => {
+          loadData();
+          setIsExpenseModalOpen(false);
+        }}
+        availableBalanceARS={adminCash?.balance_ars || 0}
+        availableBalanceUSD={adminCash?.balance_usd || 0}
+      />
+
+      {/* Currency Conversion Modal */}
+      <CurrencyConversionModal
+        isOpen={isConversionModalOpen}
+        onClose={() => setIsConversionModalOpen(false)}
+        onSuccess={() => {
+          loadData();
+          setIsConversionModalOpen(false);
+        }}
+        availableBalanceARS={adminCash?.balance_ars || 0}
+        availableBalanceUSD={adminCash?.balance_usd || 0}
+      />
     </div>
   );
 }

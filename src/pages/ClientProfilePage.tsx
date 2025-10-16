@@ -36,6 +36,7 @@ import { formatCurrency, formatDate } from '@/utils/formatters';
 
 // Hooks
 import { useClients } from '@/modules/clients/hooks/useClients';
+import { useProjectsByClient } from '@/modules/projects/hooks/useProjects';
 
 interface ClientDocument {
   id: string;
@@ -45,20 +46,8 @@ interface ClientDocument {
   size: string;
 }
 
-interface ClientProject {
-  id: string;
-  name: string;
-  status: 'En progreso' | 'Completado' | 'Pausado';
-  startDate: string;
-  endDate?: string;
-  budget?: number;
-  progress?: number;
-  type?: string;
-}
-
 // TODO: These will be loaded from Supabase in future implementation
 const mockDocuments: ClientDocument[] = [];
-const mockProjects: ClientProject[] = [];
 
 export function ClientProfilePage() {
   const navigate = useNavigate();
@@ -67,6 +56,52 @@ export function ClientProfilePage() {
 
   // Load client data from Supabase
   const { getClient, selectedClient, isLoading, deleteClient } = useClients();
+
+  // Load projects for this client
+  const { data: clientProjects = [], isLoading: isLoadingProjects } = useProjectsByClient(id || '');
+
+  // Log projects loaded
+  useEffect(() => {
+    if (clientProjects.length > 0) {
+      console.log(`📋 ClientProfilePage: Cargados ${clientProjects.length} proyectos:`, clientProjects.map(p => ({
+        id: p.id,
+        name: p.name,
+        code: p.code,
+        status: p.status,
+        progress: p.progress_percentage
+      })));
+    } else if (!isLoadingProjects) {
+      console.log('⚠️ ClientProfilePage: No se cargaron proyectos para este cliente');
+    }
+  }, [clientProjects, isLoadingProjects]);
+
+  // Map project status to display format
+  const mapProjectStatus = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'En progreso';
+      case 'completed':
+        return 'Completado';
+      case 'on_hold':
+        return 'Pausado';
+      default:
+        return 'En progreso';
+    }
+  };
+
+  // Map projects to the format expected by the table
+  const mappedProjects = clientProjects.map(project => ({
+    id: project.id,
+    name: project.name,
+    status: mapProjectStatus(project.status) as 'En progreso' | 'Completado' | 'Pausado',
+    startDate: project.start_date || '',
+    endDate: project.estimated_end_date || project.actual_end_date,
+    budget: project.total_amount,
+    progress: project.progress_percentage || 0,
+    type: project.project_type || 'other',
+  }));
+
+  console.log(`🗺️ ClientProfilePage: Proyectos mapeados para tabla: ${mappedProjects.length}`);
 
   // Load client when component mounts or ID changes
   useEffect(() => {
@@ -391,7 +426,7 @@ export function ClientProfilePage() {
                   {selectedClient?.name || 'Cargando...'}
                 </h1>
                 <p className="mt-1 text-sm text-gray-500">
-                  Cliente desde {selectedClient?.created_at ? formatDate(selectedClient.created_at) : '...'} • {mockProjects.length} proyectos
+                  Cliente desde {selectedClient?.created_at ? formatDate(selectedClient.created_at) : '...'} • {mappedProjects.length} proyectos
                 </p>
               </div>
             </div>
@@ -491,7 +526,7 @@ export function ClientProfilePage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-2xl font-bold text-gray-900">
-                      {mockProjects.length}
+                      {mappedProjects.length}
                     </div>
                     <div className="text-sm font-medium text-gray-500">Total Proyectos</div>
                   </div>
@@ -505,7 +540,7 @@ export function ClientProfilePage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-2xl font-bold text-gray-900">
-                      {mockProjects.filter(p => p.status === 'En progreso').length}
+                      {mappedProjects.filter(p => p.status === 'En progreso').length}
                     </div>
                     <div className="text-sm font-medium text-gray-500">Proyectos Activos</div>
                   </div>
@@ -519,7 +554,7 @@ export function ClientProfilePage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-2xl font-bold text-gray-900">
-                      {mockProjects.filter(p => p.status === 'Completado').length}
+                      {mappedProjects.filter(p => p.status === 'Completado').length}
                     </div>
                     <div className="text-sm font-medium text-gray-500">Proyectos Completados</div>
                   </div>
@@ -569,9 +604,9 @@ export function ClientProfilePage() {
 
               {activeTab === 'proyectos' && (
                 <DataTable
-                  data={mockProjects}
+                  data={mappedProjects}
                   columns={projectColumns}
-                  loading={false}
+                  loading={isLoadingProjects}
                   rowKey="id"
                   rowActions={projectRowActions}
                   onRowClick={handleViewProject}

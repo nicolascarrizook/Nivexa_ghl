@@ -7,6 +7,9 @@ export { SearchBar } from './SearchBar';
 export { ProjectWizardModal } from './ProjectWizardModal';
 export { ProjectList } from './ProjectList';
 export { ProjectCreationWizard } from './ProjectCreationWizard';
+export { StreamlinedPaymentModal } from './StreamlinedPaymentModal';
+export { CashFlowHealthDashboard } from './CashFlowHealthDashboard';
+export type { ProjectHealthData } from './CashFlowHealthDashboard';
 
 // Skeleton Loaders
 export { 

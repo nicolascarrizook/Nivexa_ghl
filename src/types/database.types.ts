@@ -838,6 +838,7 @@ export interface Database {
           reference: string | null
           receipt_file_url: string | null
           notes: string | null
+          movement_id: string | null
           created_at: string
           updated_at: string
           created_by: string | null
@@ -858,6 +859,7 @@ export interface Database {
           reference?: string | null
           receipt_file_url?: string | null
           notes?: string | null
+          movement_id?: string | null
           created_at?: string
           updated_at?: string
           created_by?: string | null
@@ -874,6 +876,7 @@ export interface Database {
           payment_date?: string
           due_date?: string | null
           status?: 'pending' | 'paid' | 'overdue' | 'cancelled'
+          movement_id?: string | null
           payment_method?: string | null
           reference?: string | null
           receipt_file_url?: string | null

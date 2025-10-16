@@ -1,6 +1,7 @@
 import { BaseService, ServiceResponse } from '@/core/services/BaseService';
 import { supabase } from '@/config/supabase';
 import type { Database } from '@/types/database.types';
+import { newCashBoxService } from '@/services/cash/NewCashBoxService';
 
 type ContractorPayment = Database['public']['Tables']['contractor_payments']['Row'];
 type ContractorPaymentInsert = Database['public']['Tables']['contractor_payments']['Insert'];
@@ -170,7 +171,8 @@ export class ContractorPaymentService extends BaseService<'contractor_payments'>
   }
 
   /**
-   * Marca un pago como pagado
+   * Marca un pago como pagado (método antiguo - sin integración de cajas)
+   * @deprecated Use markAsPaidWithCashBoxIntegration instead
    */
   async markAsPaid(
     id: string,
@@ -183,6 +185,99 @@ export class ContractorPaymentService extends BaseService<'contractor_payments'>
       paid_by: paidBy,
       receipt_file_url: receiptUrl,
     });
+  }
+
+  /**
+   * Marca un pago como pagado con integración completa del sistema de cajas
+   * - Valida fondos suficientes en project_cash_box y master_cash_box
+   * - Registra movimientos de caja trazables
+   * - Deduce el monto de ambas cajas automáticamente
+   * - Vincula el pago con el movimiento de caja
+   */
+  async markAsPaidWithCashBoxIntegration(
+    id: string,
+    paidBy?: string,
+    receiptUrl?: string
+  ): Promise<ServiceResponse<ContractorPayment>> {
+    try {
+      // 1. Get the payment details
+      const { data: payment, error: fetchError } = await supabase
+        .from('contractor_payments')
+        .select(`
+          *,
+          project_contractor:project_contractor_id (
+            id,
+            project_id,
+            contractor:contractor_id (
+              id,
+              name
+            )
+          )
+        `)
+        .eq('id', id)
+        .single();
+
+      if (fetchError) throw fetchError;
+      if (!payment) throw new Error('Payment not found');
+
+      // Verify payment is not already paid
+      if (payment.status === 'paid') {
+        return {
+          data: null,
+          error: new Error('Payment is already marked as paid'),
+        };
+      }
+
+      // 2. Get project_id from the project_contractor
+      const projectContractor = payment.project_contractor as any;
+      if (!projectContractor || !projectContractor.project_id) {
+        throw new Error('Project information not found for this contractor');
+      }
+
+      const projectId = projectContractor.project_id;
+      const contractorName = projectContractor.contractor?.name || 'Proveedor';
+
+      // 3. Record the provider payment in cash boxes
+      // This will validate sufficient funds and deduct from both boxes
+      const description = payment.notes
+        ? `Pago a ${contractorName}: ${payment.notes}`
+        : `Pago a ${contractorName}`;
+
+      const movementId = await newCashBoxService.processProjectExpense({
+        projectId,
+        amount: payment.amount,
+        description,
+        contractorPaymentId: payment.id,
+        currency: payment.currency as 'ARS' | 'USD',
+        contractorName,
+      });
+
+      // 4. Update the payment status with movement_id
+      const { data: updatedPayment, error: updateError } = await supabase
+        .from('contractor_payments')
+        .update({
+          status: 'paid',
+          paid_at: new Date().toISOString(),
+          paid_by: paidBy,
+          receipt_file_url: receiptUrl,
+          movement_id: movementId,
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
+
+      return {
+        data: updatedPayment as ContractorPayment,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: error as Error,
+      };
+    }
   }
 
   /**

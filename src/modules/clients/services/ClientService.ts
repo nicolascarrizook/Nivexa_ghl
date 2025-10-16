@@ -136,23 +136,26 @@ class ClientService {
       // Get project counts and revenue for each client
       const clientsWithProjects = await Promise.all(
         clients.map(async (client) => {
-          // Count total projects
+          // Count total projects (exclude soft-deleted)
           const { count: totalProjects } = await supabase
             .from('projects')
             .select('*', { count: 'exact', head: true })
+            .is('deleted_at', null)
             .eq('client_id', client.id);
 
-          // Count active projects
+          // Count active projects (exclude soft-deleted)
           const { count: activeProjects } = await supabase
             .from('projects')
             .select('*', { count: 'exact', head: true })
+            .is('deleted_at', null)
             .eq('client_id', client.id)
             .eq('status', 'active');
 
-          // Calculate total revenue (sum of total_amount from projects)
+          // Calculate total revenue (exclude soft-deleted)
           const { data: projects } = await supabase
             .from('projects')
             .select('total_amount, currency')
+            .is('deleted_at', null)
             .eq('client_id', client.id);
 
           let totalRevenueARS = 0;
@@ -192,7 +195,7 @@ class ClientService {
     try {
       // Get the current user's ID
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         throw new Error('User not authenticated');
       }
@@ -214,6 +217,69 @@ class ClientService {
       return data;
     } catch (error) {
       console.error('ClientService: Error creating client', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Find existing client or create new one
+   * Search by email (if provided) or by name
+   * Prevents duplicate clients when creating projects with inline client data
+   */
+  async findOrCreateClient(
+    clientData: Omit<ClientInsert, 'id' | 'architect_id' | 'created_at' | 'updated_at'>
+  ): Promise<Client> {
+    try {
+      // Get the current user's ID
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      // First, try to find existing client
+      let existingClient: Client | null = null;
+
+      // Search by email first (more reliable unique identifier)
+      if (clientData.email) {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('architect_id', user.id)
+          .eq('email', clientData.email)
+          .maybeSingle();
+
+        if (!error && data) {
+          existingClient = data;
+          console.log('✅ Found existing client by email:', existingClient.id);
+        }
+      }
+
+      // If not found by email, search by name (case-insensitive exact match)
+      if (!existingClient && clientData.name) {
+        const { data, error } = await supabase
+          .from('clients')
+          .select('*')
+          .eq('architect_id', user.id)
+          .ilike('name', clientData.name)
+          .maybeSingle();
+
+        if (!error && data) {
+          existingClient = data;
+          console.log('✅ Found existing client by name:', existingClient.id);
+        }
+      }
+
+      // Return existing client if found
+      if (existingClient) {
+        return existingClient;
+      }
+
+      // If not found, create new client
+      console.log('🆕 Creating new client:', clientData.name);
+      return await this.createClient(clientData);
+    } catch (error) {
+      console.error('ClientService: Error in findOrCreateClient', error);
       throw error;
     }
   }

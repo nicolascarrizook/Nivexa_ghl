@@ -10,6 +10,7 @@ import {
   ArrowLeftRight,
   FileText,
   RefreshCw,
+  Repeat,
 } from 'lucide-react';
 
 // UI Components
@@ -34,7 +35,8 @@ import type { MasterCash, CashMovement } from '@/services/cash/NewCashBoxService
 import {
   useLoanStatistics,
   useActiveLoans,
-  useOverdueInstallments,
+} from '@/hooks/useMasterLoans';
+import {
   useMasterAccounts,
 } from '@/hooks/useMasterCash';
 import { formatCurrency } from '@/utils/formatters';
@@ -44,10 +46,12 @@ import { CreateLoanModal } from '@/modules/master-cash/components/CreateLoanModa
 import { LoansDataTable } from '@/modules/master-cash/components/LoansDataTable';
 import { TransferModal } from '@/modules/master-cash/components/TransferModal';
 import { AuditTrailTable } from '@/modules/master-cash/components/AuditTrailTable';
+import { MasterCurrencyConversionModal } from '@/modules/finance/components/MasterCurrencyConversionModal';
 
 export function MasterCashPage() {
   const [isCreateLoanModalOpen, setIsCreateLoanModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [isConversionModalOpen, setIsConversionModalOpen] = useState(false);
 
   // Cash Box data (replaces accountStats)
   const [masterCash, setMasterCash] = useState<MasterCash | null>(null);
@@ -57,7 +61,6 @@ export function MasterCashPage() {
   // Data fetching
   const { data: loanStats, isLoading: loansLoading, refetch: refetchLoans } = useLoanStatistics();
   const { data: activeLoans, isLoading: activeLoansLoading } = useActiveLoans();
-  const { data: overdueInstallments } = useOverdueInstallments();
   const { data: masterAccounts } = useMasterAccounts();
 
   const isLoading = isLoadingCash || loansLoading;
@@ -150,6 +153,13 @@ export function MasterCashPage() {
                 Transferir
               </button>
               <button
+                onClick={() => setIsConversionModalOpen(true)}
+                className="inline-flex items-center px-4 py-2 border border-blue-300 rounded-lg shadow-sm text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              >
+                <Repeat className="h-4 w-4 mr-2" />
+                Convertir Divisas
+              </button>
+              <button
                 onClick={() => setIsCreateLoanModalOpen(true)}
                 className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
               >
@@ -182,7 +192,7 @@ export function MasterCashPage() {
               },
               {
                 title: 'Préstamos Activos',
-                value: loanStats?.totalActive.toString() || '0',
+                value: loanStats?.totalActive?.toString() || '0',
                 icon: TrendingUp,
                 description: `${loanStats?.totalOverdue || 0} vencidos`,
                 variant: (loanStats?.totalOverdue || 0) > 0 ? 'warning' : 'default',
@@ -201,18 +211,18 @@ export function MasterCashPage() {
           animated={!isLoading}
         />
 
-        {/* Alertas de cuotas vencidas */}
-        {overdueInstallments && overdueInstallments.length > 0 && (
+        {/* Alerta de préstamos con riesgo alto */}
+        {loanStats && loanStats.totalOverdue > 0 && (
           <SectionCard className="border-l-4 border-l-red-500 bg-red-50">
             <div className="p-4">
               <div className="flex items-center">
                 <AlertCircle className="h-5 w-5 text-red-600 mr-3" />
                 <div>
                   <h3 className="text-sm font-semibold text-red-900">
-                    Cuotas Vencidas
+                    Préstamos Atrasados
                   </h3>
                   <p className="text-sm text-red-700">
-                    Hay {overdueInstallments.length} cuota(s) vencida(s) que requieren atención inmediata
+                    Hay {loanStats.totalOverdue} préstamo(s) vencido(s) que requieren atención
                   </p>
                 </div>
               </div>
@@ -315,6 +325,18 @@ export function MasterCashPage() {
       <TransferModal
         isOpen={isTransferModalOpen}
         onClose={() => setIsTransferModalOpen(false)}
+      />
+
+      <MasterCurrencyConversionModal
+        isOpen={isConversionModalOpen}
+        onClose={() => setIsConversionModalOpen(false)}
+        onSuccess={() => {
+          loadData();
+          refetchLoans();
+          setIsConversionModalOpen(false);
+        }}
+        availableBalanceARS={masterCash?.balance_ars || 0}
+        availableBalanceUSD={masterCash?.balance_usd || 0}
       />
     </div>
   );

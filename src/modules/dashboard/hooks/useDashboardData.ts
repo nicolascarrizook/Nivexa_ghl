@@ -68,17 +68,19 @@ export function useDashboardMetrics() {
 
       // Get all project cash boxes from new system
       const { data: projectCashBoxes } = await supabase
-        .from('project_cash')
+        .from('project_cash_box')
         .select('*');
 
-      const projectsTotalArs = projectCashBoxes?.reduce((sum, box) => 
-        sum + (box.balance || 0), 0) || 0;
-      const projectsTotalUsd = 0; // No USD support in current schema
+      const projectsTotalArs = projectCashBoxes?.reduce((sum, box) =>
+        sum + (box.current_balance_ars || 0), 0) || 0;
+      const projectsTotalUsd = projectCashBoxes?.reduce((sum, box) =>
+        sum + (box.current_balance_usd || 0), 0) || 0;
 
-      // Get projects data
+      // Get projects data (exclude soft-deleted)
       const { data: projects } = await supabase
         .from('projects')
         .select('*')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
 
       const activeProjects = projects?.filter(p => p.status === 'active').length || 0;

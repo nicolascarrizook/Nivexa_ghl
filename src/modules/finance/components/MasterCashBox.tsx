@@ -68,21 +68,34 @@ export function MasterCashBoxComponent({ organizationId: propOrgId }: MasterCash
 
   const loadCashBoxData = async () => {
     if (!organizationId) return;
-    
+
     try {
       setLoading(true);
-      
-      // Obtener o crear caja maestra
-      let masterBox = await cashBoxService.getMasterCashBox(organizationId);
+
+      // Obtener o crear caja maestra usando newCashBoxService
+      let masterCash = await newCashBoxService.getMasterCash();
+
+      // Adaptar al formato esperado por el componente
+      const masterBox: MasterCashBox = {
+        id: masterCash?.id || '',
+        organization_id: organizationId,
+        name: 'Caja Maestra',
+        description: 'Caja principal del estudio',
+        current_balance_ars: masterCash?.balance_ars || 0,
+        current_balance_usd: masterCash?.balance_usd || 0,
+        total_income_ars: 0, // TODO: calcular desde cash_movements
+        total_income_usd: 0,
+        total_expenses_ars: 0,
+        total_expenses_usd: 0,
+        created_at: masterCash?.created_at || new Date().toISOString(),
+        updated_at: masterCash?.updated_at || new Date().toISOString(),
+      };
+
       setCashBox(masterBox);
 
-      // Cargar transacciones
-      const txns = await cashBoxService.getMasterTransactions(masterBox.id);
-      setTransactions(txns);
-
-      // Cargar categorías
-      const cats = await cashBoxService.getExpenseCategories(organizationId);
-      setCategories(cats);
+      // TODO: Cargar transacciones y categorías cuando estén disponibles en newCashBoxService
+      setTransactions([]);
+      setCategories([]);
     } catch (error) {
       console.error('Error loading cash box:', error);
     } finally {

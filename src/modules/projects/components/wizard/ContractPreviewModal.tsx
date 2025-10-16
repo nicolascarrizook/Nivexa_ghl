@@ -7,6 +7,7 @@ interface ContractPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   formData: Partial<ProjectFormData>;
+  investors?: any[]; // Inversionistas del proyecto
   onSign: (signatureData: { clientSignature: string; date: string }) => void;
 }
 
@@ -67,6 +68,7 @@ export function ContractPreviewModal({
   isOpen,
   onClose,
   formData,
+  investors = [],
   onSign,
 }: ContractPreviewModalProps) {
   const [clientSignature, setClientSignature] = useState('');
@@ -219,6 +221,156 @@ export function ContractPreviewModal({
                 )}
               </div>
             </div>
+
+            {/* Investors Section - only if there are investors */}
+            {investors && investors.length > 0 && (
+              <div className="bg-blue-50 rounded-lg p-6 space-y-4">
+                <h3 className="text-base font-semibold text-gray-900 mb-4">ESTRUCTURA DE INVERSIÓN</h3>
+                <p className="text-sm text-gray-700 mb-4">
+                  El proyecto cuenta con la participación de los siguientes inversionistas:
+                </p>
+
+                <div className="space-y-3">
+                  {investors.map((investor, index) => {
+                    const typeLabels = {
+                      cash_ars: "Aporte en Efectivo (ARS)",
+                      cash_usd: "Aporte en Efectivo (USD)",
+                      materials: "Aporte en Materiales",
+                      land: "Aporte de Terreno",
+                      labor: "Aporte en Mano de Obra",
+                      equipment: "Aporte de Equipamiento",
+                      other: "Otro Tipo de Aporte"
+                    };
+
+                    const isCash = investor.investmentType === 'cash_ars' || investor.investmentType === 'cash_usd';
+                    const hasInstallments = isCash && investor.installmentCount > 1;
+
+                    return (
+                      <div key={index} className="bg-white rounded-lg p-4 border border-blue-200">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <p className="font-semibold text-gray-900">{investor.name}</p>
+                            <p className="text-sm text-blue-700">
+                              {investor.percentageShare}% de participación
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-medium text-gray-900">
+                              {investor.amountArs > 0 && `$${investor.amountArs.toLocaleString()} ARS`}
+                              {investor.amountUsd > 0 && `USD ${investor.amountUsd.toLocaleString()}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 text-xs mt-3">
+                          <div>
+                            <span className="text-gray-600">Tipo de Aporte:</span>
+                            <span className="ml-1 text-gray-900 font-medium">
+                              {typeLabels[investor.investmentType as keyof typeof typeLabels]}
+                            </span>
+                          </div>
+
+                          {/* Show installment info for cash investments */}
+                          {hasInstallments && (
+                            <>
+                              <div>
+                                <span className="text-gray-600">Plan de Pagos:</span>
+                                <span className="ml-1 text-gray-900 font-medium">
+                                  {investor.installmentCount} cuotas{' '}
+                                  {investor.paymentFrequency === 'monthly' ? 'mensuales' :
+                                   investor.paymentFrequency === 'biweekly' ? 'quincenales' :
+                                   investor.paymentFrequency === 'weekly' ? 'semanales' : 'trimestrales'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600">Primer Pago:</span>
+                                <span className="ml-1 text-gray-900 font-medium">
+                                  {investor.firstPaymentDate
+                                    ? new Date(investor.firstPaymentDate).toLocaleDateString('es-AR')
+                                    : 'A definir'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600">Monto por Cuota:</span>
+                                <span className="ml-1 text-gray-900 font-medium">
+                                  {(() => {
+                                    const total = investor.amountArs > 0 ? investor.amountArs : investor.amountUsd;
+                                    const installmentAmount = total / investor.installmentCount;
+                                    return investor.amountArs > 0
+                                      ? `$${installmentAmount.toLocaleString('es-AR', { maximumFractionDigits: 2 })} ARS`
+                                      : `USD ${installmentAmount.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`;
+                                  })()}
+                                </span>
+                              </div>
+                            </>
+                          )}
+
+                          {/* Show single payment for cash without installments */}
+                          {isCash && !hasInstallments && (
+                            <div>
+                              <span className="text-gray-600">Modalidad:</span>
+                              <span className="ml-1 text-gray-900 font-medium">Pago único</span>
+                            </div>
+                          )}
+
+                          {investor.email && (
+                            <div>
+                              <span className="text-gray-600">Email:</span>
+                              <span className="ml-1 text-gray-900">{investor.email}</span>
+                            </div>
+                          )}
+                          {investor.phone && (
+                            <div>
+                              <span className="text-gray-600">Teléfono:</span>
+                              <span className="ml-1 text-gray-900">{investor.phone}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {investor.description && (
+                          <div className="mt-3 pt-3 border-t border-blue-100">
+                            <p className="text-xs text-gray-600">
+                              <span className="font-medium">Nota:</span> {investor.description}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-blue-200">
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Total Inversionistas:</span>
+                      <span className="ml-2 text-gray-900 font-semibold">{investors.length}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Participación Total:</span>
+                      <span className="ml-2 text-gray-900 font-semibold">
+                        {investors.reduce((sum, inv) => sum + inv.percentageShare, 0).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Capital Invertido:</span>
+                      <span className="ml-2 text-gray-900 font-semibold">
+                        {(() => {
+                          const totalArs = investors.reduce((sum, inv) => sum + (inv.amountArs || 0), 0);
+                          const totalUsd = investors.reduce((sum, inv) => sum + (inv.amountUsd || 0), 0);
+                          if (totalArs > 0 && totalUsd > 0) {
+                            return `$${totalArs.toLocaleString()} ARS + USD ${totalUsd.toLocaleString()}`;
+                          } else if (totalArs > 0) {
+                            return `$${totalArs.toLocaleString()} ARS`;
+                          } else {
+                            return `USD ${totalUsd.toLocaleString()}`;
+                          }
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Standard Terms */}
             <div className="space-y-6">

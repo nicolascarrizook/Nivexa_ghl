@@ -92,7 +92,7 @@ export function ProjectExpensesTab({ project }: ProjectExpensesTabProps) {
     try {
       // Load project cash info
       const { data: cashData } = await supabase
-        .from('project_cash')
+        .from('project_cash_box')
         .select('*')
         .eq('project_id', project.id)
         .single();

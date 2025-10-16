@@ -404,9 +404,9 @@ export class BankAccountService {
 
     if (masterError) throw masterError;
 
-    // Obtener todas las project_cash
+    // Obtener todas las project_cash_box
     const { data: projectCashes, error: projectError } = await supabase
-      .from('project_cash')
+      .from('project_cash_box')
       .select('*');
 
     if (projectError) throw projectError;
@@ -414,8 +414,8 @@ export class BankAccountService {
     // Calcular balances desde las tablas existentes
     const masterBalanceARS = masterCash?.balance_ars || 0;
     const masterBalanceUSD = masterCash?.balance_usd || 0;
-    const projectBalanceARS = projectCashes?.reduce((sum, p) => sum + (p.balance || 0), 0) || 0;
-    const projectBalanceUSD = 0; // Las project_cash no tienen USD separado aún
+    const projectBalanceARS = projectCashes?.reduce((sum, p) => sum + (p.current_balance_ars || 0), 0) || 0;
+    const projectBalanceUSD = projectCashes?.reduce((sum, p) => sum + (p.current_balance_usd || 0), 0) || 0;
 
     // Obtener cuentas de bank_accounts para los conteos
     const { data: accounts } = await supabase

@@ -101,8 +101,8 @@ export function EnhancedFinancePage() {
       // Load financial summary
       const [adminCash, masterCash, projectCashes] = await Promise.all([
         supabase.from('admin_cash').select('balance').single(),
-        supabase.from('master_cash').select('balance').single(),
-        supabase.from('project_cash').select('balance')
+        supabase.from('master_cash').select('balance_ars, balance_usd').single(),
+        supabase.from('project_cash_box').select('current_balance_ars, current_balance_usd')
       ]);
 
       // Load monthly stats

@@ -12,6 +12,7 @@ const projectKeys = {
   withCash: () => [...projectKeys.all, 'withCash'] as const,
   withInstallments: (id: string) => [...projectKeys.detail(id), 'installments'] as const,
   progress: (id: string) => [...projectKeys.detail(id), 'progress'] as const,
+  byClient: (clientId: string) => [...projectKeys.all, 'byClient', clientId] as const,
 };
 
 /**
@@ -28,6 +29,24 @@ export function useProjects() {
         throw error;
       }
     },
+  });
+}
+
+/**
+ * Hook to fetch projects by client ID
+ */
+export function useProjectsByClient(clientId: string) {
+  return useQuery({
+    queryKey: projectKeys.byClient(clientId),
+    queryFn: async () => {
+      try {
+        return await projectService.getProjectsByClient(clientId);
+      } catch (error) {
+        console.error('Error fetching projects by client:', error);
+        throw error;
+      }
+    },
+    enabled: !!clientId,
   });
 }
 

@@ -24,6 +24,7 @@ import {
   Trash2,
   TrendingUp,
   User,
+  Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { GanttChart, type GanttStage } from "../../../components/GanttChart";
@@ -32,6 +33,8 @@ import { contractStorageService } from "../services/ContractStorageService";
 import { projectService } from "../services/ProjectService";
 import type { ProjectFormData, ProjectPhase } from "../types/project.types";
 import { ContractPreviewModal } from "./wizard/ContractPreviewModal";
+import { investorService } from "@/modules/investors/services/InvestorService";
+import { projectInvestorService } from "@/modules/investors/services/ProjectInvestorService";
 
 interface ProjectCreationWizardProps {
   isOpen: boolean;
@@ -50,22 +53,28 @@ const SECTIONS = [
     id: 2,
     title: "Cliente",
     icon: User,
-    description: "Información del cliente",
+    description: "Información del cliente (opcional)",
   },
   {
     id: 3,
     title: "Configuración Financiera",
     icon: CreditCard,
-    description: "Pagos y administración",
+    description: "Monto total y pagos",
   },
   {
     id: 4,
+    title: "Inversionistas",
+    icon: Users,
+    description: "Inversionistas del proyecto (opcional)",
+  },
+  {
+    id: 5,
     title: "Términos y Plazos",
     icon: FileText,
     description: "Fechas y condiciones",
   },
   {
-    id: 5,
+    id: 6,
     title: "Revisión Final",
     icon: Check,
     description: "Confirmar información",
@@ -104,6 +113,24 @@ export function ProjectCreationWizard({
   const [searchTerm, setSearchTerm] = useState("");
   const [showClientSearch, setShowClientSearch] = useState(true);
   const [selectedClient, setSelectedClient] = useState<any>(null);
+
+  // Estados para inversionistas
+  const [selectedInvestors, setSelectedInvestors] = useState<any[]>([]);
+  const [showAddInvestorForm, setShowAddInvestorForm] = useState(false);
+  const [investorFormData, setInvestorFormData] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    investmentType: "cash_ars" as "cash_ars" | "cash_usd" | "materials" | "land" | "labor" | "equipment" | "other",
+    amountArs: 0,
+    amountUsd: 0,
+    percentageShare: 0,
+    description: "",
+    // Campos para cuotas (solo aplican a cash_ars y cash_usd)
+    installmentCount: 1,
+    paymentFrequency: "monthly" as "monthly" | "biweekly" | "weekly" | "quarterly",
+    firstPaymentDate: "",
+  });
 
   // Estados para gestión de etapas
   const [editingStage, setEditingStage] = useState<string | null>(null);
@@ -214,22 +241,31 @@ export function ProjectCreationWizard({
           newErrors.projectType = "Tipo de proyecto requerido";
         break;
       case 2:
-        if (!formData.clientName)
-          newErrors.clientName = "Nombre del cliente requerido";
-        if (!formData.clientEmail)
-          newErrors.clientEmail = "Email del cliente requerido";
-        if (!formData.clientPhone)
-          newErrors.clientPhone = "Teléfono del cliente requerido";
-        if (!formData.propertyAddress)
-          newErrors.propertyAddress = "Dirección requerida";
+        // Cliente es opcional, solo validar si hay datos parciales
+        if (formData.clientName && !formData.clientEmail) {
+          newErrors.clientEmail = "Email requerido si proporciona nombre";
+        }
+        if (formData.clientEmail && !formData.clientName) {
+          newErrors.clientName = "Nombre requerido si proporciona email";
+        }
         break;
       case 3:
+        // Configuración Financiera
         if (formData.totalAmount <= 0)
           newErrors.totalAmount = "Monto total debe ser mayor a 0";
         if (!formData.firstPaymentDate)
           newErrors.firstPaymentDate = "Fecha de primer pago requerida";
         break;
       case 4:
+        // Inversionistas - Validar que haya al menos un cliente O inversionistas
+        const hasClient = formData.clientName && formData.clientEmail;
+        const hasInvestors = selectedInvestors.length > 0;
+
+        if (!hasClient && !hasInvestors) {
+          (newErrors as any).investors = "Debe agregar al menos un cliente o un inversionista";
+        }
+        break;
+      case 5:
         if (!formData.startDate)
           newErrors.startDate = "Fecha de inicio requerida";
         if (!formData.estimatedEndDate)
@@ -244,7 +280,7 @@ export function ProjectCreationWizard({
           }
         }
         break;
-      case 5:
+      case 6:
         if (!formData.contractSigned)
           (newErrors as any).contractSigned =
             "Debe firmar el contrato antes de continuar";
@@ -334,6 +370,50 @@ export function ProjectCreationWizard({
         // Note: Down payment is already processed by projectService.createProjectFromForm()
         // including administrator fees
 
+        // Save investors if any
+        if (selectedInvestors.length > 0) {
+          console.log(`💼 Saving ${selectedInvestors.length} investor(s) to project...`);
+          for (const investorData of selectedInvestors) {
+            try {
+              // 1. Find or create investor record
+              const investor = await investorService.findOrCreateInvestor({
+                name: investorData.name,
+                email: investorData.email || null,
+                phone: investorData.phone || null,
+                investor_type: 'individual', // Default to individual, could be enhanced
+                tax_id: null,
+                address: null,
+                city: null,
+              });
+
+              // 2. Add investor to project with their investment details
+              const isCash = investorData.investmentType === 'cash_ars' || investorData.investmentType === 'cash_usd';
+
+              await projectInvestorService.addInvestorToProject({
+                projectId: result.id,
+                investorId: investor.id,
+                investmentType: investorData.investmentType,
+                // Si es efectivo, usar amount; si es en especie, usar estimatedValue
+                amountArs: isCash ? investorData.amountArs : 0,
+                amountUsd: isCash ? investorData.amountUsd : 0,
+                estimatedValueArs: !isCash ? investorData.amountArs : 0,
+                estimatedValueUsd: !isCash ? investorData.amountUsd : 0,
+                percentageShare: investorData.percentageShare,
+                description: investorData.description,
+                // Add installment fields for cash investments
+                installmentCount: isCash ? investorData.installmentCount : undefined,
+                paymentFrequency: isCash ? investorData.paymentFrequency : undefined,
+                firstPaymentDate: isCash ? investorData.firstPaymentDate : undefined,
+              });
+
+              console.log(`✅ Investor ${investor.name} added to project`);
+            } catch (error) {
+              console.error(`❌ Error adding investor ${investorData.name}:`, error);
+              // Continue with other investors even if one fails
+            }
+          }
+        }
+
         onSuccess(result);
         resetForm();
       }
@@ -388,6 +468,23 @@ export function ProjectCreationWizard({
       contractSigned: false,
     });
     setErrors({});
+
+    // Reset investors
+    setSelectedInvestors([]);
+    setShowAddInvestorForm(false);
+    setInvestorFormData({
+      name: "",
+      email: "",
+      phone: "",
+      investmentType: "cash_ars",
+      amountArs: 0,
+      amountUsd: 0,
+      percentageShare: 0,
+      description: "",
+      installmentCount: 1,
+      paymentFrequency: "monthly",
+      firstPaymentDate: "",
+    });
   };
 
   const renderSection1 = () => (
@@ -497,6 +594,44 @@ export function ProjectCreationWizard({
                 placeholder="Buscar por nombre, email o CUIT/DNI..."
                 helperText="Ingresa al menos 3 caracteres para buscar"
               />
+
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-blue-900 font-medium">Proyecto sin cliente</p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      Si este es un proyecto de inversión sin cliente externo, puedes omitir este paso.
+                    </p>
+                    <Button
+                      onClick={() => {
+                        // Limpiar datos del cliente
+                        setFormData({
+                          ...formData,
+                          clientName: "",
+                          clientEmail: "",
+                          clientPhone: "",
+                          clientTaxId: "",
+                          propertyAddress: "",
+                          city: "",
+                          zipCode: "",
+                        });
+                        setSelectedClient(null);
+                        // Marcar paso 2 como completo y avanzar
+                        if (!completedSections.includes(2)) {
+                          setCompletedSections([...completedSections, 2]);
+                        }
+                        setCurrentSection(3);
+                      }}
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 text-blue-700 hover:text-blue-900"
+                    >
+                      Continuar sin cliente
+                    </Button>
+                  </div>
+                </div>
+              </div>
 
               {clientsLoading ? (
                 <div className="p-8 text-center">
@@ -656,7 +791,798 @@ export function ProjectCreationWizard({
     );
   };
 
-  const renderSection3 = () => (
+  const renderSection3 = () => {
+    // Componente para agregar inversionistas
+    return (
+      <div className="space-y-6">
+        <SectionCard
+          title="Inversionistas del Proyecto"
+          icon={<Users className="w-5 h-5" />}
+          subtitle="Agrega los inversionistas que participarán en este proyecto (opcional)"
+        >
+          <div className="mt-6">
+            {errors.investors && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-800">{errors.investors}</p>
+                </div>
+              </div>
+            )}
+
+            {!formData.clientName && !formData.clientEmail && selectedInvestors.length === 0 && (
+              <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-yellow-900 font-medium">Atención</p>
+                    <p className="text-xs text-yellow-700 mt-1">
+                      No has agregado cliente ni inversionistas. Debes agregar al menos uno para continuar.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <p className="text-sm text-gray-600 mb-4">
+              Los inversionistas podrán ver el estado del proyecto a través de un portal exclusivo.
+            </p>
+
+            {/* Lista de inversionistas agregados */}
+            {selectedInvestors.length > 0 && (
+              <div className="mb-6 space-y-3">
+                <h4 className="font-medium text-gray-900">
+                  Inversionistas agregados ({selectedInvestors.length})
+                </h4>
+                <div className="space-y-2">
+                  {selectedInvestors.map((investor, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <div className="p-2 bg-blue-100 rounded-lg">
+                          <User className="w-4 h-4 text-blue-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">
+                            {investor.name}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            {investor.percentageShare}% de participación •{" "}
+                            {(() => {
+                              const typeLabels = {
+                                cash_ars: "Efectivo",
+                                cash_usd: "Efectivo",
+                                materials: "Materiales",
+                                land: "Terreno",
+                                labor: "Mano de obra",
+                                equipment: "Equipamiento",
+                                other: "Otro"
+                              };
+
+                              const hasAmountArs = investor.amountArs && investor.amountArs > 0;
+                              const hasAmountUsd = investor.amountUsd && investor.amountUsd > 0;
+
+                              return (
+                                <>
+                                  {typeLabels[investor.investmentType as keyof typeof typeLabels]}
+                                  {hasAmountArs && ` - $${investor.amountArs.toLocaleString()} ARS`}
+                                  {hasAmountUsd && ` - $${investor.amountUsd.toLocaleString()} USD`}
+                                </>
+                              );
+                            })()}
+                          </p>
+                          {/* Mostrar info de cuotas si es efectivo */}
+                          {(investor.investmentType === 'cash_ars' || investor.investmentType === 'cash_usd') && investor.installmentCount > 1 && (
+                            <p className="text-xs text-blue-600 mt-1 flex items-center">
+                              <CreditCard className="w-3 h-3 mr-1" />
+                              {investor.installmentCount} cuotas {investor.paymentFrequency === 'monthly' ? 'mensuales' : investor.paymentFrequency === 'biweekly' ? 'quincenales' : investor.paymentFrequency === 'weekly' ? 'semanales' : 'trimestrales'}
+                              {investor.firstPaymentDate && ` desde ${new Date(investor.firstPaymentDate).toLocaleDateString('es-AR')}`}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        onClick={() => {
+                          setSelectedInvestors(
+                            selectedInvestors.filter((_, i) => i !== index)
+                          );
+                        }}
+                        variant="ghost"
+                        size="sm"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-600" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Formulario para agregar inversionista */}
+            {showAddInvestorForm ? (
+              <SectionCard
+                title="Nuevo Inversionista"
+                icon={<User className="w-5 h-5" />}
+                background="gray"
+              >
+                <div className="space-y-4 mt-6">
+                  {/* Info del proyecto y cotización */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div>
+                      <p className="text-xs text-blue-700 mb-1">Monto Total del Proyecto</p>
+                      <p className="text-lg font-semibold text-blue-900">
+                        {formData.currency === "ARS"
+                          ? formatARS(formData.totalAmount)
+                          : formatUSD(formData.totalAmount)
+                        }
+                      </p>
+                      <p className="text-xs text-blue-600 mt-1">
+                        {formData.currency === "ARS"
+                          ? `≈ ${formatUSD(convertARStoUSD(formData.totalAmount))}`
+                          : `≈ ${formatARS(convertUSDtoARS(formData.totalAmount))}`
+                        }
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-blue-700 mb-1">Dólar Blue</p>
+                      <p className="text-lg font-semibold text-blue-900">
+                        {displayRate}
+                      </p>
+                      {exchangeRate && (
+                        <p className="text-xs text-blue-600 mt-1">
+                          Compra: ${exchangeRate.buy.toLocaleString()} • Venta: ${exchangeRate.sell.toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Total de porcentajes asignados */}
+                  {(() => {
+                    const totalAllocated = selectedInvestors.reduce(
+                      (sum, inv) => sum + inv.percentageShare,
+                      0
+                    );
+                    const remaining = 100 - totalAllocated;
+                    const willExceed = totalAllocated + investorFormData.percentageShare > 100;
+
+                    return (
+                      <div className={`p-4 rounded-lg border ${
+                        willExceed
+                          ? "bg-red-50 border-red-200"
+                          : remaining < 20
+                          ? "bg-yellow-50 border-yellow-200"
+                          : "bg-green-50 border-green-200"
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className={`text-sm font-medium ${
+                              willExceed
+                                ? "text-red-900"
+                                : remaining < 20
+                                ? "text-yellow-900"
+                                : "text-green-900"
+                            }`}>
+                              Distribución de Participaciones
+                            </p>
+                            <p className={`text-xs mt-1 ${
+                              willExceed
+                                ? "text-red-700"
+                                : remaining < 20
+                                ? "text-yellow-700"
+                                : "text-green-700"
+                            }`}>
+                              {selectedInvestors.length > 0
+                                ? `${totalAllocated.toFixed(2)}% asignado • ${remaining.toFixed(2)}% disponible`
+                                : "100% disponible"}
+                            </p>
+                          </div>
+                          <div className={`text-2xl font-bold ${
+                            willExceed
+                              ? "text-red-900"
+                              : remaining < 20
+                              ? "text-yellow-900"
+                              : "text-green-900"
+                          }`}>
+                            {remaining.toFixed(1)}%
+                          </div>
+                        </div>
+                        {willExceed && (
+                          <div className="mt-2 flex items-start space-x-2">
+                            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                            <p className="text-xs text-red-800">
+                              ⚠️ El porcentaje total excedería el 100%. Ajusta los valores antes de agregar.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Input
+                      label="Nombre Completo"
+                      value={investorFormData.name}
+                      onChange={(e) =>
+                        setInvestorFormData({ ...investorFormData, name: e.target.value })
+                      }
+                      placeholder="Nombre del inversionista"
+                      required
+                    />
+
+                    <Input
+                      label="Email"
+                      type="email"
+                      value={investorFormData.email}
+                      onChange={(e) =>
+                        setInvestorFormData({ ...investorFormData, email: e.target.value })
+                      }
+                      placeholder="correo@ejemplo.com"
+                    />
+
+                    <Input
+                      label="Teléfono"
+                      value={investorFormData.phone}
+                      onChange={(e) =>
+                        setInvestorFormData({ ...investorFormData, phone: e.target.value })
+                      }
+                      placeholder="+54 11 1234-5678"
+                    />
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Tipo de Inversión
+                      </label>
+                      <select
+                        value={investorFormData.investmentType}
+                        onChange={(e) =>
+                          setInvestorFormData({
+                            ...investorFormData,
+                            investmentType: e.target.value as any,
+                          })
+                        }
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent bg-white"
+                      >
+                        <option value="cash_ars">Efectivo ARS</option>
+                        <option value="cash_usd">Efectivo USD</option>
+                        <option value="materials">Materiales</option>
+                        <option value="land">Terreno</option>
+                        <option value="labor">Mano de obra</option>
+                        <option value="equipment">Equipamiento</option>
+                        <option value="other">Otro</option>
+                      </select>
+                    </div>
+
+                    {/* Moneda del aporte/valor estimado */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Moneda del {investorFormData.investmentType.startsWith('cash') ? 'Aporte' : 'Valor Estimado'}
+                      </label>
+                      <select
+                        value={investorFormData.investmentType === "cash_usd" || investorFormData.amountUsd > 0 ? "USD" : "ARS"}
+                        onChange={(e) => {
+                          const isUSD = e.target.value === "USD";
+
+                          // Si cambia de moneda, preservar el valor pero moverlo al campo correcto
+                          if (isUSD && investorFormData.amountArs > 0) {
+                            const convertedAmount = convertARStoUSD(investorFormData.amountArs);
+                            setInvestorFormData({
+                              ...investorFormData,
+                              amountUsd: convertedAmount,
+                              amountArs: 0,
+                            });
+                          } else if (!isUSD && investorFormData.amountUsd > 0) {
+                            const convertedAmount = convertUSDtoARS(investorFormData.amountUsd);
+                            setInvestorFormData({
+                              ...investorFormData,
+                              amountArs: convertedAmount,
+                              amountUsd: 0,
+                            });
+                          }
+                        }}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent bg-white"
+                      >
+                        <option value="ARS">ARS (Pesos Argentinos)</option>
+                        <option value="USD">USD (Dólares)</option>
+                      </select>
+                    </div>
+
+                    {/* Input de monto - siempre visible */}
+                    <div>
+                      {(investorFormData.investmentType === "cash_usd" || investorFormData.amountUsd > 0) && investorFormData.amountArs === 0 ? (
+                        // USD
+                        <>
+                          <Input
+                            label={investorFormData.investmentType.startsWith('cash') ? 'Monto en USD' : 'Valor Estimado en USD'}
+                            type="number"
+                            value={investorFormData.amountUsd}
+                            onChange={(e) => {
+                              const amount = parseFloat(e.target.value) || 0;
+                              const projectTotal = formData.totalAmount;
+
+                              console.log('💰 Calculando porcentaje:', {
+                                amount,
+                                projectTotal,
+                                currency: formData.currency
+                              });
+
+                              // Calcular porcentaje automáticamente
+                              let amountInProjectCurrency = amount;
+                              if (formData.currency === "ARS") {
+                                amountInProjectCurrency = convertUSDtoARS(amount);
+                                console.log('🔄 Conversión USD → ARS:', amountInProjectCurrency);
+                              }
+
+                              const percentage = projectTotal > 0
+                                ? (amountInProjectCurrency / projectTotal) * 100
+                                : 0;
+
+                              console.log('📊 Porcentaje calculado:', percentage);
+
+                              setInvestorFormData({
+                                ...investorFormData,
+                                amountUsd: amount,
+                                amountArs: 0,
+                                percentageShare: Math.round(percentage * 100) / 100,
+                              });
+                            }}
+                            placeholder="0"
+                            helperText="El porcentaje se calculará automáticamente"
+                          />
+                          {investorFormData.amountUsd > 0 && exchangeRate && (
+                            <p className="text-xs text-gray-500 mt-1 ml-1">
+                              ≈ {formatARS(convertUSDtoARS(investorFormData.amountUsd))}
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        // ARS
+                        <>
+                          <Input
+                            label={investorFormData.investmentType.startsWith('cash') ? 'Monto en ARS' : 'Valor Estimado en ARS'}
+                            type="number"
+                            value={investorFormData.amountArs}
+                            onChange={(e) => {
+                              const amount = parseFloat(e.target.value) || 0;
+                              const projectTotal = formData.totalAmount;
+
+                              console.log('💰 Calculando porcentaje:', {
+                                amount,
+                                projectTotal,
+                                currency: formData.currency
+                              });
+
+                              // Calcular porcentaje automáticamente
+                              let amountInProjectCurrency = amount;
+                              if (formData.currency === "USD") {
+                                amountInProjectCurrency = convertARStoUSD(amount);
+                                console.log('🔄 Conversión ARS → USD:', amountInProjectCurrency);
+                              }
+
+                              const percentage = projectTotal > 0
+                                ? (amountInProjectCurrency / projectTotal) * 100
+                                : 0;
+
+                              console.log('📊 Porcentaje calculado:', percentage);
+
+                              setInvestorFormData({
+                                ...investorFormData,
+                                amountArs: amount,
+                                amountUsd: 0,
+                                percentageShare: Math.round(percentage * 100) / 100,
+                              });
+                            }}
+                            placeholder="0"
+                            helperText="El porcentaje se calculará automáticamente"
+                          />
+                          {investorFormData.amountArs > 0 && exchangeRate && (
+                            <p className="text-xs text-gray-500 mt-1 ml-1">
+                              ≈ {formatUSD(convertARStoUSD(investorFormData.amountArs))}
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    <Input
+                      label="Porcentaje de Participación"
+                      type="number"
+                      value={investorFormData.percentageShare}
+                      onChange={(e) => {
+                        const percentage = parseFloat(e.target.value) || 0;
+                        const projectTotal = formData.totalAmount;
+
+                        console.log('📊 Calculando monto desde porcentaje:', {
+                          percentage,
+                          projectTotal,
+                          currency: formData.currency
+                        });
+
+                        if (projectTotal > 0 && percentage > 0) {
+                          // Calcular monto en la moneda del proyecto
+                          const amountInProjectCurrency = (percentage / 100) * projectTotal;
+
+                          console.log('💰 Monto en moneda del proyecto:', amountInProjectCurrency);
+
+                          // Determinar en qué moneda está aportando el inversionista
+                          // Usar la misma lógica que el selector de moneda
+                          const isInvestorUSD = investorFormData.investmentType === "cash_usd" || investorFormData.amountUsd > 0;
+
+                          console.log('💱 Moneda del inversionista:', isInvestorUSD ? 'USD' : 'ARS');
+
+                          if (isInvestorUSD) {
+                            // Inversionista aporta en USD
+                            let amountUsd = amountInProjectCurrency;
+                            if (formData.currency === "ARS") {
+                              // Proyecto en ARS, convertir a USD
+                              amountUsd = convertARStoUSD(amountInProjectCurrency);
+                              console.log('🔄 Conversión ARS → USD:', amountUsd);
+                            }
+                            setInvestorFormData({
+                              ...investorFormData,
+                              percentageShare: percentage,
+                              amountUsd: Math.round(amountUsd * 100) / 100,
+                              amountArs: 0,
+                            });
+                          } else {
+                            // Inversionista aporta en ARS
+                            let amountArs = amountInProjectCurrency;
+                            if (formData.currency === "USD") {
+                              // Proyecto en USD, convertir a ARS
+                              amountArs = convertUSDtoARS(amountInProjectCurrency);
+                              console.log('🔄 Conversión USD → ARS:', amountArs);
+                            }
+                            setInvestorFormData({
+                              ...investorFormData,
+                              percentageShare: percentage,
+                              amountArs: Math.round(amountArs * 100) / 100,
+                              amountUsd: 0,
+                            });
+                          }
+                        } else {
+                          // Si no hay total o porcentaje es 0, solo actualizar porcentaje
+                          setInvestorFormData({
+                            ...investorFormData,
+                            percentageShare: percentage,
+                          });
+                        }
+                      }}
+                      placeholder="20"
+                      helperText="Bidireccional: cambia el monto o el porcentaje"
+                      required
+                    />
+
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Descripción (opcional)
+                      </label>
+                      <textarea
+                        value={investorFormData.description}
+                        onChange={(e) =>
+                          setInvestorFormData({
+                            ...investorFormData,
+                            description: e.target.value,
+                          })
+                        }
+                        placeholder="Detalles adicionales sobre la inversión..."
+                        rows={2}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none"
+                      />
+                    </div>
+
+                    {/* Campos de cuotas - solo para efectivo */}
+                    {(investorFormData.investmentType === 'cash_ars' || investorFormData.investmentType === 'cash_usd') && (
+                      <>
+                        <div className="md:col-span-2">
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                            <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center">
+                              <CreditCard className="w-4 h-4 mr-2" />
+                              Plan de Pagos del Inversionista
+                            </h4>
+                            <p className="text-xs text-blue-700 mb-2">
+                              Configure cómo el inversionista realizará su aporte en efectivo
+                            </p>
+                            <div className="flex items-start space-x-2 mt-2 pt-2 border-t border-blue-200">
+                              <div className="flex-shrink-0">
+                                <svg className="w-4 h-4 text-blue-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                              <p className="text-xs text-blue-700">
+                                <strong>Importante:</strong> El proyecto se financia en {formData.installmentCount} {formData.installmentCount === 1 ? 'cuota' : 'cuotas'} {formData.paymentFrequency === 'monthly' ? 'mensuales' : formData.paymentFrequency === 'biweekly' ? 'quincenales' : formData.paymentFrequency === 'weekly' ? 'semanales' : 'trimestrales'}. Los inversionistas deben aportar durante este período, no después.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Cantidad de Cuotas
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max={formData.installmentCount}
+                            value={investorFormData.installmentCount}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value) || 1;
+                              // Limitar entre 1 y el número de cuotas del proyecto
+                              const count = Math.max(1, Math.min(value, formData.installmentCount || 1));
+                              setInvestorFormData({
+                                ...investorFormData,
+                                installmentCount: count,
+                              });
+                            }}
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            {formData.installmentCount === 1
+                              ? "1 cuota = pago único completo"
+                              : `Máximo ${formData.installmentCount} cuotas (duración del proyecto)`
+                            }
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Frecuencia de Pago
+                          </label>
+                          <select
+                            value={investorFormData.paymentFrequency}
+                            onChange={(e) =>
+                              setInvestorFormData({
+                                ...investorFormData,
+                                paymentFrequency: e.target.value as any,
+                              })
+                            }
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent bg-white"
+                          >
+                            <option value="monthly">Mensual</option>
+                            <option value="biweekly">Quincenal</option>
+                            <option value="weekly">Semanal</option>
+                            <option value="quarterly">Trimestral</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Fecha Primer Pago
+                          </label>
+                          <input
+                            type="date"
+                            min={formData.firstPaymentDate}
+                            max={(() => {
+                              // Calcular fecha máxima (última cuota del proyecto)
+                              if (!formData.firstPaymentDate || !formData.installmentCount) return undefined;
+
+                              const firstDate = new Date(formData.firstPaymentDate);
+                              const installments = formData.installmentCount;
+
+                              // Calcular meses a sumar según frecuencia
+                              let monthsToAdd = 0;
+                              switch (formData.paymentFrequency) {
+                                case 'monthly':
+                                  monthsToAdd = installments - 1;
+                                  break;
+                                case 'biweekly':
+                                  monthsToAdd = Math.ceil((installments - 1) / 2);
+                                  break;
+                                case 'weekly':
+                                  monthsToAdd = Math.ceil((installments - 1) / 4);
+                                  break;
+                                case 'quarterly':
+                                  monthsToAdd = (installments - 1) * 3;
+                                  break;
+                              }
+
+                              const lastDate = new Date(firstDate);
+                              lastDate.setMonth(lastDate.getMonth() + monthsToAdd);
+
+                              return lastDate.toISOString().split('T')[0];
+                            })()}
+                            value={investorFormData.firstPaymentDate}
+                            onChange={(e) =>
+                              setInvestorFormData({
+                                ...investorFormData,
+                                firstPaymentDate: e.target.value,
+                              })
+                            }
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Entre {formData.firstPaymentDate && new Date(formData.firstPaymentDate).toLocaleDateString('es-AR')} y la última cuota del proyecto
+                          </p>
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <div className="bg-gray-50 rounded-lg p-4">
+                            <div className="grid grid-cols-3 gap-4 text-sm">
+                              <div>
+                                <span className="text-gray-600">Monto por Cuota:</span>
+                                <span className="ml-2 text-gray-900 font-medium">
+                                  {(() => {
+                                    const totalAmount = investorFormData.amountArs > 0 ? investorFormData.amountArs : investorFormData.amountUsd;
+                                    const installmentAmount = totalAmount / investorFormData.installmentCount;
+                                    const currency = investorFormData.amountArs > 0 ? 'ARS' : 'USD';
+                                    return currency === 'USD'
+                                      ? formatUSD(installmentAmount)
+                                      : formatARS(installmentAmount);
+                                  })()}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600">Total Cuotas:</span>
+                                <span className="ml-2 text-gray-900 font-medium">
+                                  {investorFormData.installmentCount}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600">Frecuencia:</span>
+                                <span className="ml-2 text-gray-900 font-medium">
+                                  {investorFormData.paymentFrequency === 'monthly' && 'Mensual'}
+                                  {investorFormData.paymentFrequency === 'biweekly' && 'Quincenal'}
+                                  {investorFormData.paymentFrequency === 'weekly' && 'Semanal'}
+                                  {investorFormData.paymentFrequency === 'quarterly' && 'Trimestral'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+                    <Button
+                      onClick={() => {
+                        setShowAddInvestorForm(false);
+                        setInvestorFormData({
+                          name: "",
+                          email: "",
+                          phone: "",
+                          investmentType: "cash_ars",
+                          amountArs: 0,
+                          amountUsd: 0,
+                          percentageShare: 0,
+                          description: "",
+                          installmentCount: 1,
+                          paymentFrequency: "monthly",
+                          firstPaymentDate: "",
+                        });
+                      }}
+                      variant="ghost"
+                      size="sm"
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        if (!investorFormData.name || investorFormData.percentageShare <= 0) {
+                          alert("Por favor completa nombre y porcentaje de participación");
+                          return;
+                        }
+
+                        // Validar que no exceda 100%
+                        const totalAllocated = selectedInvestors.reduce(
+                          (sum, inv) => sum + inv.percentageShare,
+                          0
+                        );
+                        if (totalAllocated + investorFormData.percentageShare > 100) {
+                          alert(
+                            `El total de participaciones excedería el 100%. ` +
+                            `Actualmente: ${totalAllocated.toFixed(2)}%, ` +
+                            `intentas agregar: ${investorFormData.percentageShare.toFixed(2)}%`
+                          );
+                          return;
+                        }
+
+                        // Validar cuotas del inversionista para efectivo
+                        const isCash = investorFormData.investmentType === 'cash_ars' || investorFormData.investmentType === 'cash_usd';
+                        if (isCash && investorFormData.installmentCount > formData.installmentCount) {
+                          alert(
+                            `El inversionista no puede pagar en más cuotas que la duración del proyecto. ` +
+                            `Máximo permitido: ${formData.installmentCount} cuotas`
+                          );
+                          return;
+                        }
+
+                        // Validar fecha de primer pago
+                        if (isCash && investorFormData.firstPaymentDate) {
+                          const investorDate = new Date(investorFormData.firstPaymentDate);
+                          const projectFirstDate = new Date(formData.firstPaymentDate);
+
+                          // Calcular fecha máxima (última cuota del proyecto)
+                          const lastDate = new Date(projectFirstDate);
+                          let monthsToAdd = 0;
+                          switch (formData.paymentFrequency) {
+                            case 'monthly':
+                              monthsToAdd = formData.installmentCount - 1;
+                              break;
+                            case 'biweekly':
+                              monthsToAdd = Math.ceil((formData.installmentCount - 1) / 2);
+                              break;
+                            case 'weekly':
+                              monthsToAdd = Math.ceil((formData.installmentCount - 1) / 4);
+                              break;
+                            case 'quarterly':
+                              monthsToAdd = (formData.installmentCount - 1) * 3;
+                              break;
+                          }
+                          lastDate.setMonth(lastDate.getMonth() + monthsToAdd);
+
+                          if (investorDate < projectFirstDate || investorDate > lastDate) {
+                            alert(
+                              `La fecha de primer pago del inversionista debe estar entre ` +
+                              `${projectFirstDate.toLocaleDateString('es-AR')} y ${lastDate.toLocaleDateString('es-AR')} ` +
+                              `(período de cuotas del proyecto)`
+                            );
+                            return;
+                          }
+                        }
+
+                        // Asegurar que las cuotas del inversionista no excedan el límite
+                        const investorData = {
+                          ...investorFormData,
+                          installmentCount: isCash
+                            ? Math.min(investorFormData.installmentCount, formData.installmentCount)
+                            : investorFormData.installmentCount,
+                        };
+
+                        // Agregar inversionista a la lista
+                        setSelectedInvestors([
+                          ...selectedInvestors,
+                          investorData,
+                        ]);
+
+                        // Limpiar formulario
+                        setInvestorFormData({
+                          name: "",
+                          email: "",
+                          phone: "",
+                          investmentType: "cash_ars",
+                          amountArs: 0,
+                          amountUsd: 0,
+                          percentageShare: 0,
+                          description: "",
+                          installmentCount: 1,
+                          paymentFrequency: "monthly",
+                          firstPaymentDate: "",
+                        });
+
+                        // Ocultar formulario
+                        setShowAddInvestorForm(false);
+                      }}
+                      variant="primary"
+                      size="sm"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Agregar
+                    </Button>
+                  </div>
+                </div>
+              </SectionCard>
+            ) : (
+              <Button
+                onClick={() => setShowAddInvestorForm(true)}
+                variant="outline"
+                size="md"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Agregar Inversionista
+              </Button>
+            )}
+
+            <p className="text-xs text-gray-500 mt-4">
+              Nota: Puedes agregar inversionistas ahora o después desde los detalles del proyecto.
+            </p>
+          </div>
+        </SectionCard>
+      </div>
+    );
+  };
+
+  const renderSection4 = () => (
     <div className="space-y-6">
       {/* Currency Exchange Info */}
       {formData.currency === "USD" && exchangeRate && (
@@ -948,7 +1874,7 @@ export function ProjectCreationWizard({
     })
   );
 
-  const renderSection4 = () => (
+  const renderSection5 = () => (
     <div className="space-y-6">
       {/* Project Dates */}
       <SectionCard
@@ -1310,7 +2236,7 @@ export function ProjectCreationWizard({
     });
   };
 
-  const renderSection5 = () => (
+  const renderSection6 = () => (
     <div className="space-y-6">
       {/* Contract Preview and Signature */}
       <SectionCard
@@ -1569,11 +2495,13 @@ export function ProjectCreationWizard({
       case 2:
         return renderSection2();
       case 3:
-        return renderSection3();
+        return renderSection4(); // Configuración Financiera
       case 4:
-        return renderSection4();
+        return renderSection3(); // Inversionistas
       case 5:
         return renderSection5();
+      case 6:
+        return renderSection6();
       default:
         return null;
     }
@@ -1765,6 +2693,7 @@ export function ProjectCreationWizard({
         isOpen={showContractPreview}
         onClose={() => setShowContractPreview(false)}
         formData={formData}
+        investors={selectedInvestors}
         onSign={handleContractSign}
       />
     </>

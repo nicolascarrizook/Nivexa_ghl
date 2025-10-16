@@ -1,16 +1,15 @@
 import React from 'react';
-import { motion } from 'framer-motion';
-import { 
-  CheckCircle, 
-  Clock, 
-  Pause, 
-  XCircle, 
+import {
+  CheckCircle,
+  Clock,
+  Pause,
+  XCircle,
   FileText,
-  AlertTriangle 
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { BADGE_VARIANTS, getProjectStatusBadge } from '../constants/design-tokens';
 
-type ProjectStatus = 'active' | 'completed' | 'on_hold' | 'cancelled' | 'draft';
+type ProjectStatus = 'active' | 'completed' | 'on_hold' | 'cancelled' | 'draft' | 'paused';
 
 interface ProjectStatusBadgeProps {
   status: ProjectStatus;
@@ -22,38 +21,45 @@ interface ProjectStatusBadgeProps {
 
 const STATUS_CONFIG = {
   active: {
-    label: 'Active',
+    label: 'Activo',
     icon: Clock,
-    color: 'bg-gray-100 text-gray-900 border-gray-300',
-    iconColor: 'text-gray-600',
+    color: BADGE_VARIANTS.projectStatus.active.variant,
+    iconColor: 'text-green-700',
     pulse: false,
   },
   completed: {
-    label: 'Completed',
+    label: 'Completado',
     icon: CheckCircle,
-    color: 'bg-gray-100 text-gray-900 border-gray-300',
-    iconColor: 'text-gray-600',
+    color: BADGE_VARIANTS.projectStatus.completed.variant,
+    iconColor: 'text-gray-700',
     pulse: false,
   },
   on_hold: {
-    label: 'On Hold',
+    label: 'Pausado',
     icon: Pause,
-    color: 'bg-gray-100 text-gray-900 border-gray-300',
-    iconColor: 'text-gray-600',
+    color: BADGE_VARIANTS.projectStatus.paused.variant,
+    iconColor: 'text-yellow-700',
+    pulse: false,
+  },
+  paused: {
+    label: 'Pausado',
+    icon: Pause,
+    color: BADGE_VARIANTS.projectStatus.paused.variant,
+    iconColor: 'text-yellow-700',
     pulse: false,
   },
   cancelled: {
-    label: 'Cancelled',
+    label: 'Cancelado',
     icon: XCircle,
-    color: 'bg-gray-100 text-gray-900 border-gray-300',
-    iconColor: 'text-gray-600',
+    color: BADGE_VARIANTS.projectStatus.cancelled.variant,
+    iconColor: 'text-red-700',
     pulse: false,
   },
   draft: {
-    label: 'Draft',
+    label: 'Borrador',
     icon: FileText,
-    color: 'bg-gray-100 text-gray-900 border-gray-300',
-    iconColor: 'text-gray-600',
+    color: BADGE_VARIANTS.projectStatus.draft.variant,
+    iconColor: 'text-gray-700',
     pulse: false,
   },
 } as const;

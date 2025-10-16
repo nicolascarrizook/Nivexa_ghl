@@ -6,115 +6,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Nivexa is a financial management system specialized for architecture studios with a triple cash box system and project financing features. Built with React 19, TypeScript, Vite 7, Tailwind CSS v4, and Supabase (PostgreSQL).
 
-## Key Architecture
-
-### Agent Structure
-Each agent is a Markdown file with YAML frontmatter containing:
-- **name**: Unique kebab-case identifier
-- **description**: Detailed usage scenarios with 3-4 examples including context and commentary
-- **color**: Visual identification
-- **tools**: Specific Claude Code tools the agent can access (Write, Read, MultiEdit, Bash, Task, etc.)
-- **System prompt**: Comprehensive expertise and instructions (500+ words)
-
-### Department Organization
-Agents are organized into functional departments:
-- `engineering/` - Development and implementation agents
-- `design/` - UI/UX and visual design agents
-- `marketing/` - Growth and platform-specific marketing agents
-- `product/` - Product strategy and feedback agents
-- `project-management/` - Sprint and project coordination agents
-- `studio-operations/` - Business operations and support agents
-- `testing/` - Quality assurance and performance agents
-- `bonus/` - Special agents including the proactive studio-coach
-
-## Development Workflow
-
-### Agent Installation
-```bash
-# Clone repository
-git clone https://github.com/contains-studio/agents.git
-
-# Copy to Claude Code agents directory
-cp -r agents/* ~/.claude/agents/
-
-# Restart Claude Code to load agents
-```
-
-### Creating New Agents
-When creating a new agent:
-1. Place in appropriate department folder
-2. Use existing agents as templates for structure
-3. Include comprehensive YAML frontmatter
-4. Write detailed system prompt (500+ words minimum)
-5. Provide 3-4 realistic usage examples with context and commentary
-6. Test thoroughly with real tasks
-
-### Agent Testing Checklist
-- Agent activates correctly for intended use cases
-- Specified tools are accessible and functional
-- Output quality meets studio standards
-- Edge cases are handled appropriately
-- Works well in multi-agent workflows
-- Completes tasks within 6-day sprint constraints
-
-## Key Agents and Their Purposes
-
-### Proactive Agents
-These agents trigger automatically:
-- **studio-coach**: Activates at start of complex tasks or when agents need coordination
-- **test-writer-fixer**: Triggers after feature implementation or bug fixes
-- **whimsy-injector**: Activates after UI/UX changes
-- **experiment-tracker**: Triggers when feature flags are added
-
-### Core Development Agents
-- **rapid-prototyper**: MVP creation, trend integration, project scaffolding
-- **backend-architect**: API design, scalable server systems
-- **frontend-developer**: Fast user interfaces, component development
-- **mobile-app-builder**: Native iOS/Android experiences
-- **ai-engineer**: AI/ML feature integration
-
-### Studio Philosophy
-All agents follow the "6-day sprint" philosophy:
-- Ship fast and iterate based on real feedback
-- Prioritize working prototypes over perfect code
-- Focus on viral potential and user value
-- Maintain high velocity without sacrificing core quality
-
-## Agent Customization
-
-### Required Components for Custom Agents
-Each agent must include:
-- Unique name and clear role definition
-- 5-8 specific primary responsibilities
-- Technical skills and knowledge areas
-- Integration with 6-day sprint workflow
-- Success metrics and constraints
-- Platform/tool-specific methodologies
-
-### Department-Specific Focus
-- **Engineering**: Implementation speed, code quality, testing
-- **Design**: User experience, visual consistency, rapid iteration
-- **Marketing**: Viral potential, platform expertise, growth metrics
-- **Product**: User value, data-driven decisions, market fit
-- **Operations**: Process optimization, friction reduction, system scaling
-
-## Best Practices
-
-### Working with Agents
-1. Let agents collaborate on complex tasks
-2. Be specific in task descriptions for better performance
-3. Trust domain expertise of specialized agents
-4. Use studio-coach for multi-agent coordination
-5. Leverage proactive agents' automatic triggers
-
-### Agent Communication
-Agents should:
-- Maintain their specialized persona and expertise
-- Reference the 6-day sprint constraint when relevant
-- Collaborate smoothly with handoffs between specialists
-- Focus on rapid delivery and iteration
-- Balance speed with quality for studio success
-
 ## Development Commands
 
 ```bash
@@ -143,6 +34,11 @@ npm run build-storybook    # Build Storybook
 # Database setup
 npm run setup:auth         # Setup authentication
 npm run db:setup          # Setup database
+
+# Cash system diagnostic tools
+npm run diagnose:cash      # Quick cash system check
+npm run diagnose:detailed  # Detailed analysis with SQL solutions
+npm run fix:cash          # Auto-fix duplicate records
 ```
 
 ## Database Setup
@@ -189,7 +85,7 @@ Core business logic implementing a specialized financial flow:
 The system supports ARS (Argentine Peso) and USD:
 - Cash boxes have separate balance fields: `current_balance_ars`, `current_balance_usd`
 - All monetary amounts validated with `isValidCurrencyAmount()` to prevent overflow
-- Validation enforced in `src/core/utils/validation.ts`
+- Validation enforced in `src/utils/validation.ts`
 - Maximum values defined in currency validation functions
 
 ### Module Structure
@@ -322,7 +218,7 @@ const schema = z.object({ /* ... */ });
 const form = useForm({ resolver: zodResolver(schema) });
 ```
 
-Currency amounts should be validated with utility functions from `@core/utils/validation.ts`.
+Currency amounts should be validated with utility functions from `@/utils/validation.ts`.
 
 ### Error Handling Pattern
 

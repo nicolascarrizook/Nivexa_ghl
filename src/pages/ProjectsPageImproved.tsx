@@ -40,7 +40,7 @@ import { ProjectCreationWizard } from "@/modules/projects/components/ProjectCrea
 
 // Hooks and utilities
 import { formatCurrency } from "@/utils/formatters";
-import { useProjectsWithCash } from "@modules/projects/hooks/useProjects";
+import { useProjectsWithCash, useDeleteProject } from "@modules/projects/hooks/useProjects";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { toast } from "@/hooks/useToast";
 
@@ -60,6 +60,9 @@ export function ProjectsPageImproved() {
     error,
     refetch,
   } = useProjectsWithCash();
+
+  // Delete project mutation
+  const deleteMutation = useDeleteProject();
 
   // Process projects data
   const projects = useMemo(() => {
@@ -139,11 +142,16 @@ export function ProjectsPageImproved() {
     setShowDeleteModal(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (projectToDelete) {
-      console.log("Delete project:", projectToDelete);
-      toast.success(`Proyecto "${projectToDelete.name}" eliminado exitosamente`);
-      refetch();
+      try {
+        await deleteMutation.mutateAsync(projectToDelete.id);
+        toast.success(`Proyecto "${projectToDelete.name}" eliminado exitosamente`);
+        refetch();
+      } catch (error) {
+        console.error("Error deleting project:", error);
+        toast.error(`Error al eliminar el proyecto: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+      }
     }
     setShowDeleteModal(false);
     setProjectToDelete(null);

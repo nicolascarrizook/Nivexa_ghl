@@ -4,6 +4,8 @@ import { useContractorPayments } from '../hooks';
 import { useContractorBudget } from '../hooks';
 import MetricGrid from '@/design-system/components/data-display/MetricGrid';
 import { BudgetItemCard } from './BudgetItemCard';
+import { CurrencyBadge } from './CurrencyBadge';
+import { PaymentStatusBadge } from './PaymentStatusBadge';
 import type { Database } from '@/types/database.types';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { supabase } from '@/config/supabase';
@@ -40,12 +42,36 @@ export function PaymentSection({ projectContractorId, onPaymentChange }: Payment
     notes: '',
   });
 
+  // Parse date string as local date (avoid timezone issues)
+  const parseLocalDate = (dateString: string): Date => {
+    const [year, month, day] = dateString.split('T')[0].split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('es-AR', {
       style: 'currency',
       currency: 'ARS',
     }).format(amount);
   };
+
+  // Calculate currency summaries
+  const currencySummary = useMemo(() => {
+    const ars = { total: 0, paid: 0, pending: 0 };
+    const usd = { total: 0, paid: 0, pending: 0 };
+
+    (payments as ContractorPaymentWithBudgetItem[]).forEach(payment => {
+      const currency = payment.currency === 'USD' ? usd : ars;
+      currency.total += payment.amount;
+      if (payment.status === 'paid') {
+        currency.paid += payment.amount;
+      } else if (payment.status === 'pending' || payment.status === 'overdue') {
+        currency.pending += payment.amount;
+      }
+    });
+
+    return { ars, usd };
+  }, [payments]);
 
   // Calculate remaining balance
   const remainingBalance = useMemo(() => {
@@ -166,46 +192,42 @@ export function PaymentSection({ projectContractorId, onPaymentChange }: Payment
 
   const handleMarkAsPaid = async (paymentId: string) => {
     try {
-      // Obtener el pago completo para conocer el monto y project_id
       const payment = (payments as ContractorPaymentWithBudgetItem[]).find(p => p.id === paymentId);
       if (!payment) {
         alert('No se encontró el pago');
         return;
       }
 
-      // Obtener el project_id del contractor
-      const { data: projectContractor } = await supabase
-        .from('project_contractors')
-        .select('project_id')
-        .eq('id', payment.project_contractor_id)
-        .single();
-
-      if (!projectContractor) {
-        alert('No se encontró el proyecto asociado');
-        return;
-      }
-
+      // Solicitar información adicional opcional
       const paidBy = prompt('¿Quién realizó el pago? (opcional)');
       const receiptUrl = prompt('URL del comprobante (opcional)');
 
-      // Procesar el gasto en la caja del proyecto
-      const { newCashBoxService } = await import('@/services/cash/NewCashBoxService');
-      await newCashBoxService.processProjectExpense({
-        projectId: projectContractor.project_id,
-        amount: payment.amount,
-        description: `Pago a proveedor - ${payment.notes || 'Sin descripción'}`,
-        contractorPaymentId: paymentId,
-        currency: 'ARS' // Por ahora ARS por defecto, después se puede hacer dinámico
-      });
-
-      // Actualizar el estado del pago
+      // El método markAsPaidWithCashBoxIntegration ahora maneja todo:
+      // - Valida fondos suficientes en ambas cajas
+      // - Registra movimientos de caja
+      // - Deduce montos automáticamente
+      // - Vincula el pago con el movimiento
       const success = await markAsPaid(paymentId, paidBy || undefined, receiptUrl || undefined);
+
       if (success) {
         onPaymentChange?.();
+        alert('Pago registrado exitosamente. Los fondos se han deducido de las cajas del proyecto y master.');
       }
     } catch (error: any) {
       console.error('Error al procesar el pago:', error);
-      alert(`Error al procesar el pago: ${error.message || 'Error desconocido'}`);
+
+      // Mejorar el mensaje de error para casos comunes
+      let errorMessage = error.message || 'Error desconocido';
+
+      if (errorMessage.includes('Insufficient funds')) {
+        errorMessage = '⚠️ Fondos Insuficientes\n\n' + errorMessage +
+          '\n\nPor favor, verifica el saldo de la caja del proyecto antes de marcar el pago como pagado.';
+      } else if (errorMessage.includes('Cash box not found')) {
+        errorMessage = '⚠️ Error de Configuración\n\n' +
+          'No se encontró la caja del proyecto. Por favor, contacta al administrador del sistema.';
+      }
+
+      alert(`Error al procesar el pago:\n\n${errorMessage}`);
     }
   };
 
@@ -348,6 +370,59 @@ export function PaymentSection({ projectContractorId, onPaymentChange }: Payment
         </div>
       )}
 
+      {/* Currency Summary */}
+      {(currencySummary.ars.total > 0 || currencySummary.usd.total > 0) && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Resumen por Moneda</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {currencySummary.ars.total > 0 && (
+              <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                <div className="flex items-center gap-2 mb-3">
+                  <CurrencyBadge currency="ARS" size="md" />
+                  <h4 className="font-semibold text-gray-900">Pesos Argentinos</h4>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Total:</span>
+                    <span className="font-semibold text-gray-900">{formatCurrency(currencySummary.ars.total)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Pagado:</span>
+                    <span className="font-semibold text-green-600">{formatCurrency(currencySummary.ars.paid)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Pendiente:</span>
+                    <span className="font-semibold text-orange-600">{formatCurrency(currencySummary.ars.pending)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            {currencySummary.usd.total > 0 && (
+              <div className="border border-green-200 rounded-lg p-4 bg-green-50">
+                <div className="flex items-center gap-2 mb-3">
+                  <CurrencyBadge currency="USD" size="md" />
+                  <h4 className="font-semibold text-gray-900">Dólares</h4>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Total:</span>
+                    <span className="font-semibold text-gray-900">US$ {currencySummary.usd.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Pagado:</span>
+                    <span className="font-semibold text-green-600">US$ {currencySummary.usd.paid.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Pendiente:</span>
+                    <span className="font-semibold text-orange-600">US$ {currencySummary.usd.pending.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Unassigned Payments Warning */}
       {unassignedPayments.length > 0 && (
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
@@ -361,44 +436,69 @@ export function PaymentSection({ projectContractorId, onPaymentChange }: Payment
                 Los siguientes pagos no están asociados a ningún trabajo. Asígnalos para que aparezcan en las tarjetas correspondientes:
               </p>
               <div className="space-y-2">
-                {unassignedPayments.map((payment) => (
-                  <div key={payment.id} className="bg-white rounded p-3 border border-yellow-200">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-gray-900">
-                          {formatCurrency(payment.amount)}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Estado: {payment.status === 'paid' ? 'Pagado' : 'Pendiente'}
-                          {payment.notes && ` • ${payment.notes}`}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 ml-4">
-                        <select
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              handleAssignPayment(payment.id, e.target.value);
-                            }
-                          }}
-                          className="text-xs border border-gray-300 rounded px-2 py-1"
-                        >
-                          <option value="">Asignar a...</option>
-                          {budgetItems?.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.description}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => handleDeleteClick(payment.id)}
-                          className="text-xs text-red-600 hover:text-red-800"
-                        >
-                          Eliminar
-                        </button>
+                {unassignedPayments.map((payment) => {
+                  const dueDate = payment.due_date ? parseLocalDate(payment.due_date) : null;
+                  const today = new Date();
+                  const isOverdue = dueDate && dueDate < today && payment.status !== 'paid';
+                  const daysOverdue = isOverdue ? Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+
+                  return (
+                    <div key={payment.id} className="bg-white rounded p-3 border border-yellow-200">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-semibold text-gray-900">
+                              {payment.currency === 'USD'
+                                ? `US$ ${payment.amount.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                : formatCurrency(payment.amount)
+                              }
+                            </p>
+                            <CurrencyBadge currency={payment.currency === 'USD' ? 'USD' : 'ARS'} size="sm" />
+                            <PaymentStatusBadge status={payment.status as 'pending' | 'paid' | 'overdue' | 'cancelled'} size="sm" />
+                          </div>
+                          {payment.notes && (
+                            <p className="text-xs text-gray-500">{payment.notes}</p>
+                          )}
+                          {payment.due_date && (
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs text-gray-500">
+                                Vencimiento: {parseLocalDate(payment.due_date).toLocaleDateString('es-AR')}
+                              </p>
+                              {isOverdue && (
+                                <span className="text-xs font-medium text-red-600">
+                                  (Vencido hace {daysOverdue} día{daysOverdue !== 1 ? 's' : ''})
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <select
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                handleAssignPayment(payment.id, e.target.value);
+                              }
+                            }}
+                            className="text-xs border border-gray-300 rounded px-2 py-1"
+                          >
+                            <option value="">Asignar a...</option>
+                            {budgetItems?.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.description}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => handleDeleteClick(payment.id)}
+                            className="text-xs text-red-600 hover:text-red-800 whitespace-nowrap"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

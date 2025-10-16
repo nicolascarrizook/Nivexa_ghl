@@ -144,7 +144,11 @@ export function useContractorPayments(projectContractorId: string): UseContracto
     setError(null);
 
     try {
-      const { error: updateError } = await contractorPaymentService.markAsPaid(id, paidBy, receiptUrl);
+      const { data, error: updateError } = await contractorPaymentService.markAsPaidWithCashBoxIntegration(
+        id,
+        paidBy,
+        receiptUrl
+      );
 
       if (updateError) {
         throw updateError;
