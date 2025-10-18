@@ -23,7 +23,8 @@ export {
 export {
   ContractorPaymentService,
   contractorPaymentService,
-  type PaymentSummary
+  type PaymentSummary,
+  type ContractorAccountStatement
 } from './ContractorPaymentService';
 
 export {

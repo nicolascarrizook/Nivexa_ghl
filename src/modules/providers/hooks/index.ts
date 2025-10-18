@@ -3,6 +3,7 @@ export { useContractorBudget } from './useContractorBudget';
 export { useContractorPayments } from './useContractorPayments';
 export { useContractorProgress } from './useContractorProgress';
 export { useProjectExpenses } from './useProjectExpenses';
+export { useContractorAccountStatement } from './useContractorAccountStatement';
 
 export type { UseProjectContractorsResult } from './useProjectContractors';
 export type { UseContractorBudgetResult } from './useContractorBudget';

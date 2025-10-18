@@ -1,7 +1,8 @@
 import { FileText } from 'lucide-react';
 import Modal from '@/design-system/components/feedback/Modal';
-import { BudgetSection } from './BudgetSection';
-import { PaymentSection } from './PaymentSection';
+import { SimplePayableAccount } from './SimplePayableAccount';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/config/supabase';
 
 interface ManagePaymentsModalProps {
   isOpen: boolean;
@@ -18,6 +19,22 @@ export function ManagePaymentsModal({
   contractorName,
   onPaymentChange,
 }: ManagePaymentsModalProps) {
+  // Fetch project contractor data to get project_id, budget_amount, and currency
+  const { data: contractorData, isLoading } = useQuery({
+    queryKey: ['project-contractor', projectContractorId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('project_contractors')
+        .select('project_id, budget_amount, currency')
+        .eq('id', projectContractorId)
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: isOpen && !!projectContractorId,
+  });
+
   if (!isOpen) return null;
 
   return (
@@ -31,7 +48,7 @@ export function ManagePaymentsModal({
                 <FileText className="h-5 w-5 text-gray-600" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Resumen</h2>
+                <h2 className="text-lg font-semibold text-gray-900">Cuenta por Pagar</h2>
                 <p className="text-xs text-gray-500 mt-1">{contractorName || 'Contractor'}</p>
               </div>
             </div>
@@ -39,7 +56,7 @@ export function ManagePaymentsModal({
 
           <div className="flex-1 p-4">
             <p className="text-sm text-gray-600">
-              Vista completa del presupuesto y pagos del proveedor
+              Gestiona los pagos a este proveedor de forma simple y directa
             </p>
           </div>
 
@@ -57,22 +74,29 @@ export function ManagePaymentsModal({
         <div className="flex-1 flex flex-col">
           {/* Content Area */}
           <div className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-3xl mx-auto space-y-6">
-              {/* Budget Summary */}
-              <div>
-                <h3 className="text-sm font-medium text-primary mb-3">Presupuesto</h3>
-                <BudgetSection projectContractorId={projectContractorId} />
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="animate-pulse space-y-4 w-full max-w-3xl">
+                  <div className="h-32 bg-gray-200 rounded"></div>
+                  <div className="h-48 bg-gray-200 rounded"></div>
+                </div>
               </div>
-
-              {/* Payments Summary */}
-              <div>
-                <h3 className="text-sm font-medium text-primary mb-3">Pagos</h3>
-                <PaymentSection
+            ) : contractorData ? (
+              <div className="max-w-3xl mx-auto">
+                <SimplePayableAccount
                   projectContractorId={projectContractorId}
-                  onPaymentChange={onPaymentChange}
+                  projectId={contractorData.project_id}
+                  contractorName={contractorName || 'Contractor'}
+                  budgetAmount={contractorData.budget_amount || 0}
+                  currency={contractorData.currency || 'ARS'}
+                  onPaymentRegistered={onPaymentChange}
                 />
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <p className="text-gray-500">No se pudo cargar la información del contractor</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

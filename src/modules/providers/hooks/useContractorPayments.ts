@@ -151,6 +151,8 @@ export function useContractorPayments(projectContractorId: string): UseContracto
       );
 
       if (updateError) {
+        // Guardar el error en el estado Y lanzarlo para que el componente lo maneje
+        setError(updateError);
         throw updateError;
       }
 
@@ -158,7 +160,8 @@ export function useContractorPayments(projectContractorId: string): UseContracto
       return true;
     } catch (err) {
       setError(err as Error);
-      return false;
+      // Re-lanzar el error para que el componente pueda manejarlo
+      throw err;
     } finally {
       setLoading(false);
     }

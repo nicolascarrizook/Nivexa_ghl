@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
-import { AlertCircle, TrendingUp } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useContractorPayments } from '../hooks';
 import { useContractorBudget } from '../hooks';
-import MetricGrid from '@/design-system/components/data-display/MetricGrid';
 import { BudgetItemCard } from './BudgetItemCard';
 import { CurrencyBadge } from './CurrencyBadge';
 import { PaymentStatusBadge } from './PaymentStatusBadge';
+import { ContractorAccountStatementCard } from './ContractorAccountStatementCard';
 import type { Database } from '@/types/database.types';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { supabase } from '@/config/supabase';
@@ -54,69 +54,6 @@ export function PaymentSection({ projectContractorId, onPaymentChange }: Payment
       currency: 'ARS',
     }).format(amount);
   };
-
-  // Calculate currency summaries
-  const currencySummary = useMemo(() => {
-    const ars = { total: 0, paid: 0, pending: 0 };
-    const usd = { total: 0, paid: 0, pending: 0 };
-
-    (payments as ContractorPaymentWithBudgetItem[]).forEach(payment => {
-      const currency = payment.currency === 'USD' ? usd : ars;
-      currency.total += payment.amount;
-      if (payment.status === 'paid') {
-        currency.paid += payment.amount;
-      } else if (payment.status === 'pending' || payment.status === 'overdue') {
-        currency.pending += payment.amount;
-      }
-    });
-
-    return { ars, usd };
-  }, [payments]);
-
-  // Calculate remaining balance
-  const remainingBalance = useMemo(() => {
-    const totalBudget = budgetSummary?.grand_total || 0;
-    const totalPaid = summary?.total_paid || 0;
-    return Math.max(0, totalBudget - totalPaid);
-  }, [budgetSummary?.grand_total, summary?.total_paid]);
-
-  // Financial metrics for MetricGrid
-  const financialMetrics = useMemo(() => {
-    const totalBudget = budgetSummary?.grand_total || 0;
-    const totalPaid = summary?.total_paid || 0;
-    const totalPayments = summary?.total_payments || 0;
-
-    return [
-      {
-        title: 'Presupuesto Total',
-        value: formatCurrency(totalBudget),
-        icon: TrendingUp,
-        variant: 'info' as const,
-        size: 'sm' as const,
-      },
-      {
-        title: 'Total Pagado',
-        value: formatCurrency(totalPaid),
-        icon: TrendingUp,
-        variant: 'success' as const,
-        size: 'sm' as const,
-      },
-      {
-        title: 'Saldo Pendiente',
-        value: formatCurrency(remainingBalance),
-        icon: AlertCircle,
-        variant: remainingBalance > 0 ? ('warning' as const) : ('default' as const),
-        size: 'sm' as const,
-      },
-      {
-        title: 'Total Cuotas',
-        value: totalPayments.toString(),
-        icon: TrendingUp,
-        variant: 'default' as const,
-        size: 'sm' as const,
-      },
-    ];
-  }, [budgetSummary?.grand_total, summary?.total_paid, summary?.total_payments, remainingBalance]);
 
   // Group payments by budget item
   const paymentsByItem = useMemo(() => {
@@ -203,31 +140,33 @@ export function PaymentSection({ projectContractorId, onPaymentChange }: Payment
       const receiptUrl = prompt('URL del comprobante (opcional)');
 
       // El método markAsPaidWithCashBoxIntegration ahora maneja todo:
-      // - Valida fondos suficientes en ambas cajas
+      // - Valida fondos suficientes en la caja del proyecto
       // - Registra movimientos de caja
       // - Deduce montos automáticamente
       // - Vincula el pago con el movimiento
-      const success = await markAsPaid(paymentId, paidBy || undefined, receiptUrl || undefined);
+      await markAsPaid(paymentId, paidBy || undefined, receiptUrl || undefined);
 
-      if (success) {
-        onPaymentChange?.();
-        alert('Pago registrado exitosamente. Los fondos se han deducido de las cajas del proyecto y master.');
-      }
+      // Si llegamos aquí, el pago fue exitoso
+      onPaymentChange?.();
+      alert('✅ Pago registrado exitosamente.\n\nLos fondos se han deducido de la caja del proyecto.');
     } catch (error: any) {
       console.error('Error al procesar el pago:', error);
 
       // Mejorar el mensaje de error para casos comunes
       let errorMessage = error.message || 'Error desconocido';
 
-      if (errorMessage.includes('Insufficient funds')) {
-        errorMessage = '⚠️ Fondos Insuficientes\n\n' + errorMessage +
-          '\n\nPor favor, verifica el saldo de la caja del proyecto antes de marcar el pago como pagado.';
-      } else if (errorMessage.includes('Cash box not found')) {
-        errorMessage = '⚠️ Error de Configuración\n\n' +
-          'No se encontró la caja del proyecto. Por favor, contacta al administrador del sistema.';
+      if (errorMessage.includes('Fondos insuficientes')) {
+        // El error ya viene formateado desde NewCashBoxService con toda la información necesaria
+        alert('❌ ' + errorMessage);
+      } else if (errorMessage.includes('Cash box not found') || errorMessage.includes('Project cash not found')) {
+        alert('⚠️ Error de Configuración\n\n' +
+          'No se encontró la caja del proyecto. Por favor, contacta al administrador del sistema.');
+      } else if (errorMessage.includes('Payment is already marked as paid')) {
+        alert('ℹ️ Este pago ya fue marcado como pagado anteriormente.');
+      } else {
+        // Otros errores
+        alert(`❌ Error al procesar el pago:\n\n${errorMessage}`);
       }
-
-      alert(`Error al procesar el pago:\n\n${errorMessage}`);
     }
   };
 
@@ -290,15 +229,8 @@ export function PaymentSection({ projectContractorId, onPaymentChange }: Payment
 
   return (
     <div className="space-y-6">
-      {/* Summary Metrics */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Resumen Financiero</h3>
-        <MetricGrid
-          metrics={financialMetrics}
-          columns={4}
-          gap="sm"
-        />
-      </div>
+      {/* Contractor Account Statement - Vista de Cuenta Corriente Consolidada */}
+      <ContractorAccountStatementCard projectContractorId={projectContractorId} />
 
       {/* Payment Form Modal */}
       {isAddingPayment && selectedItemId && (
@@ -366,59 +298,6 @@ export function PaymentSection({ projectContractorId, onPaymentChange }: Payment
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Currency Summary */}
-      {(currencySummary.ars.total > 0 || currencySummary.usd.total > 0) && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Resumen por Moneda</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {currencySummary.ars.total > 0 && (
-              <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
-                <div className="flex items-center gap-2 mb-3">
-                  <CurrencyBadge currency="ARS" size="md" />
-                  <h4 className="font-semibold text-gray-900">Pesos Argentinos</h4>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total:</span>
-                    <span className="font-semibold text-gray-900">{formatCurrency(currencySummary.ars.total)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Pagado:</span>
-                    <span className="font-semibold text-green-600">{formatCurrency(currencySummary.ars.paid)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Pendiente:</span>
-                    <span className="font-semibold text-orange-600">{formatCurrency(currencySummary.ars.pending)}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            {currencySummary.usd.total > 0 && (
-              <div className="border border-green-200 rounded-lg p-4 bg-green-50">
-                <div className="flex items-center gap-2 mb-3">
-                  <CurrencyBadge currency="USD" size="md" />
-                  <h4 className="font-semibold text-gray-900">Dólares</h4>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total:</span>
-                    <span className="font-semibold text-gray-900">US$ {currencySummary.usd.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Pagado:</span>
-                    <span className="font-semibold text-green-600">US$ {currencySummary.usd.paid.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Pendiente:</span>
-                    <span className="font-semibold text-orange-600">US$ {currencySummary.usd.pending.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       )}

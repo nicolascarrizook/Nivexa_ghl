@@ -532,122 +532,28 @@ class NewCashBoxService {
         throw new Error('Master cash not found');
       }
 
-      // Verificar si hay fondos suficientes según la moneda del pago
+      // Verificar fondos suficientes según la moneda del pago
+      // NO se realiza conversión automática - solo se verifica el balance en la moneda específica
       if (paymentCurrency === 'ARS') {
         const arsNeeded = params.amount;
         const arsAvailable = projectCash.current_balance_ars || 0;
 
         if (arsAvailable < arsNeeded) {
-          console.log(`⚠️ Fondos insuficientes en ARS. Necesario: ${arsNeeded}, Disponible: ${arsAvailable}`);
-
-          // Calcular cuántos pesos faltan
-          const arsMissing = arsNeeded - arsAvailable;
-
-          // Obtener tasa de cambio actual
-          const { data: exchangeRate } = await supabase
-            .from('exchange_rates')
-            .select('rate')
-            .eq('from_currency', 'USD')
-            .eq('to_currency', 'ARS')
-            .order('effective_date', { ascending: false })
-            .limit(1)
-            .single();
-
-          const rate = exchangeRate?.rate ? parseFloat(exchangeRate.rate.toString()) : 1000;
-
-          // Calcular USD necesarios (redondeado hacia arriba para asegurar suficientes pesos)
-          const usdNeeded = Math.ceil(arsMissing / rate * 100) / 100; // 2 decimales
-
-          console.log(`💱 Conversión necesaria: ${usdNeeded} USD → ${arsMissing} ARS (Tasa: ${rate})`);
-
-          // Verificar que project_cash tiene suficientes USD
-          if (projectCash.current_balance_usd < usdNeeded) {
-            const totalDeficitArs = arsNeeded - arsAvailable;
-            throw new Error(
-              `Fondos insuficientes en la caja del proyecto.\n\n` +
-              `💵 Moneda del pago: ARS\n` +
-              `💰 Monto requerido: $${arsNeeded.toFixed(2)} ARS\n\n` +
-              `📊 Balances disponibles:\n` +
-              `   • ARS: $${arsAvailable.toFixed(2)}\n` +
-              `   • USD: $${projectCash.current_balance_usd.toFixed(2)}\n\n` +
-              `⚠️ Se intentó conversión automática de USD a ARS:\n` +
-              `   • Faltan: $${arsMissing.toFixed(2)} ARS\n` +
-              `   • Se necesitan: $${usdNeeded.toFixed(2)} USD para convertir\n` +
-              `   • Déficit USD: $${(usdNeeded - projectCash.current_balance_usd).toFixed(2)} USD\n\n` +
-              `Por favor, registre ingresos adicionales al proyecto antes de realizar este pago.`
-            );
-          }
-
-          // Convertir USD a ARS dentro de project_cash
-          const arsConverted = usdNeeded * rate;
-
-          // Capture balance snapshots BEFORE conversion
-          const conversionBalanceBefore = {
-            ars: projectCash.current_balance_ars || 0,
-            usd: projectCash.current_balance_usd || 0,
-          };
-
-          await supabase
-            .from('project_cash_box')
-            .update({
-              current_balance_usd: (projectCash.current_balance_usd || 0) - usdNeeded,
-              current_balance_ars: (projectCash.current_balance_ars || 0) + arsConverted,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', projectCash.id);
-
-          // Calculate balance AFTER conversion
-          const conversionBalanceAfter = {
-            ars: conversionBalanceBefore.ars + arsConverted,
-            usd: conversionBalanceBefore.usd - usdNeeded,
-          };
-
-          // Registrar el movimiento de conversión con snapshots
-          await supabase
-            .from('cash_movements')
-            .insert({
-              movement_type: 'adjustment',
-              source_type: 'project',
-              source_id: projectCash.id,
-              destination_type: 'project',
-              destination_id: projectCash.id,
-              amount: arsConverted,
-              currency: 'ARS',
-              description: `Conversión interna: ${usdNeeded} USD → ${arsConverted.toFixed(2)} ARS`,
-              project_id: params.projectId,
-              balance_before_ars: conversionBalanceBefore.ars,
-              balance_after_ars: conversionBalanceAfter.ars,
-              balance_before_usd: conversionBalanceBefore.usd,
-              balance_after_usd: conversionBalanceAfter.usd,
-              metadata: {
-                usd_amount: usdNeeded,
-                ars_amount: arsConverted,
-                exchange_rate: rate,
-                reason: 'insufficient_ars_for_payment'
-              }
-            });
-
-          console.log(`✅ Conversión completada: ${usdNeeded} USD → ${arsConverted.toFixed(2)} ARS`);
-
-          // Actualizar balance en memoria
-          projectCash.current_balance_ars = (projectCash.current_balance_ars || 0) + arsConverted;
-          projectCash.current_balance_usd = (projectCash.current_balance_usd || 0) - usdNeeded;
-        }
-
-        // Verificar fondos suficientes después de conversión
-        if ((projectCash.current_balance_ars || 0) < arsNeeded) {
+          const deficit = arsNeeded - arsAvailable;
           throw new Error(
-            `Fondos insuficientes después de conversión.\n\n` +
+            `Fondos insuficientes en la caja del proyecto.\n\n` +
+            `💵 Moneda del pago: ARS\n` +
             `💰 Monto requerido: $${arsNeeded.toFixed(2)} ARS\n` +
-            `📊 Balance disponible: $${(projectCash.current_balance_ars || 0).toFixed(2)} ARS\n` +
-            `❌ Déficit: $${(arsNeeded - (projectCash.current_balance_ars || 0)).toFixed(2)} ARS\n\n` +
-            `Este error no debería ocurrir. Por favor contacte soporte técnico.`
+            `📊 Balance disponible: $${arsAvailable.toFixed(2)} ARS\n` +
+            `❌ Déficit: $${deficit.toFixed(2)} ARS\n\n` +
+            `Por favor, registre un ingreso adicional al proyecto antes de realizar este pago.`
           );
         }
       } else {
         // Pago en USD
         const usdNeeded = params.amount;
         const usdAvailable = projectCash.current_balance_usd || 0;
+
         if (usdAvailable < usdNeeded) {
           const deficit = usdNeeded - usdAvailable;
           throw new Error(
@@ -661,7 +567,7 @@ class NewCashBoxService {
         }
       }
 
-      // Capture balance snapshots BEFORE the expense (after any conversion)
+      // Capture balance snapshots BEFORE the expense
       const projectBalanceBefore = {
         ars: projectCash.current_balance_ars || 0,
         usd: projectCash.current_balance_usd || 0,

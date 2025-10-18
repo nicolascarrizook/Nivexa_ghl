@@ -20,6 +20,27 @@ export interface PaymentSummary {
   };
 }
 
+export interface ContractorAccountStatement {
+  contractor_id: string;
+  contractor_name: string;
+  project_contractor_id: string;
+  budget_total: number;
+  total_paid: number;
+  pending_balance: number;
+  currency: string;
+  payment_history: Array<{
+    id: string;
+    date: string;
+    amount: number;
+    payment_type: string;
+    progress_percentage: number | null;
+    notes: string | null;
+    status: string;
+  }>;
+  last_payment_date: string | null;
+  progress_percentage_total: number;
+}
+
 /**
  * Service para gestionar pagos a contractors
  * Maneja anticipos, pagos progresivos y pagos finales
@@ -291,6 +312,63 @@ export class ContractorPaymentService extends BaseService<'contractor_payments'>
   }
 
   /**
+   * Registra y procesa un pago en una sola operación
+   * Crea el pago y lo marca como pagado con validación de fondos
+   */
+  async registerAndProcessPayment(params: {
+    projectContractorId: string;
+    amount: number;
+    currency: 'ARS' | 'USD';
+    notes?: string;
+    paidBy?: string;
+  }): Promise<ServiceResponse<ContractorPayment>> {
+    try {
+      // 1. Crear el pago como pendiente
+      const { data: newPayment, error: createError } = await supabase
+        .from('contractor_payments')
+        .insert({
+          project_contractor_id: params.projectContractorId,
+          payment_type: 'progress',
+          amount: params.amount,
+          currency: params.currency,
+          payment_date: new Date().toISOString(),
+          due_date: new Date().toISOString(),
+          notes: params.notes || null,
+          status: 'pending',
+        })
+        .select()
+        .single();
+
+      if (createError) throw createError;
+      if (!newPayment) throw new Error('Failed to create payment');
+
+      // 2. Marcar como pagado con validación de fondos
+      const { data: processedPayment, error: processError } =
+        await this.markAsPaidWithCashBoxIntegration(
+          newPayment.id,
+          params.paidBy,
+          undefined
+        );
+
+      if (processError) {
+        // Si falla el procesamiento, eliminar el pago creado
+        await supabase.from('contractor_payments').delete().eq('id', newPayment.id);
+        throw processError;
+      }
+
+      return {
+        data: processedPayment,
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: error as Error,
+      };
+    }
+  }
+
+  /**
    * Elimina un pago
    */
   async delete(id: string): Promise<ServiceResponse<boolean>> {
@@ -483,6 +561,97 @@ export class ContractorPaymentService extends BaseService<'contractor_payments'>
 
       return {
         data: data as ContractorPayment[],
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: error as Error,
+      };
+    }
+  }
+
+  /**
+   * Obtiene el estado de cuenta completo de un contractor
+   * Muestra presupuesto total, pagado, saldo pendiente e historial de pagos
+   */
+  async getAccountStatement(projectContractorId: string): Promise<ServiceResponse<ContractorAccountStatement>> {
+    try {
+      // 1. Get project contractor with budget info
+      const { data: projectContractor, error: contractorError } = await supabase
+        .from('project_contractors')
+        .select(`
+          id,
+          project_id,
+          budget_amount,
+          currency,
+          contractor:contractor_id (
+            id,
+            name
+          )
+        `)
+        .eq('id', projectContractorId)
+        .single();
+
+      if (contractorError) throw contractorError;
+      if (!projectContractor) throw new Error('Project contractor not found');
+
+      // 2. Get all payments for this contractor
+      const { data: payments, error: paymentsError } = await supabase
+        .from('contractor_payments')
+        .select('*')
+        .eq('project_contractor_id', projectContractorId)
+        .order('payment_date', { ascending: false });
+
+      if (paymentsError) throw paymentsError;
+
+      // 3. Calculate totals
+      const totalPaid = payments
+        ?.filter(p => p.status === 'paid')
+        .reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
+
+      const budgetTotal = projectContractor.budget_amount || 0;
+      const pendingBalance = budgetTotal - totalPaid;
+
+      // 4. Calculate total progress percentage (sum of all progress payments)
+      const progressPercentageTotal = payments
+        ?.filter(p => p.progress_percentage != null)
+        .reduce((sum, p) => sum + (p.progress_percentage || 0), 0) || 0;
+
+      // 5. Get last payment date
+      const paidPayments = payments?.filter(p => p.status === 'paid' && p.paid_at);
+      const lastPaymentDate = paidPayments && paidPayments.length > 0
+        ? paidPayments.sort((a, b) =>
+            new Date(b.paid_at!).getTime() - new Date(a.paid_at!).getTime()
+          )[0].paid_at
+        : null;
+
+      // 6. Format payment history
+      const paymentHistory = payments?.map(p => ({
+        id: p.id,
+        date: p.paid_at || p.payment_date,
+        amount: p.amount,
+        payment_type: p.payment_type,
+        progress_percentage: p.progress_percentage,
+        notes: p.notes,
+        status: p.status,
+      })) || [];
+
+      const contractor = projectContractor.contractor as any;
+
+      return {
+        data: {
+          contractor_id: contractor?.id || '',
+          contractor_name: contractor?.name || 'Proveedor',
+          project_contractor_id: projectContractorId,
+          budget_total: budgetTotal,
+          total_paid: totalPaid,
+          pending_balance: pendingBalance,
+          currency: projectContractor.currency || 'ARS',
+          payment_history: paymentHistory,
+          last_payment_date: lastPaymentDate,
+          progress_percentage_total: progressPercentageTotal,
+        },
         error: null,
       };
     } catch (error) {
