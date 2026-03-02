@@ -19,6 +19,7 @@
     "build-storybook": "storybook build",
     "setup:auth": "node scripts/setup-auth.js",
     "db:setup": "node scripts/setup-auth.js",
+    "db:clean": "npx tsx scripts/clean-database.ts",
     "diagnose:cash": "npx tsx src/scripts/diagnose-cash-system.ts",
     "diagnose:detailed": "npx tsx src/scripts/diagnose-detailed.ts",
     "diagnose:validation": "npx tsx scripts/diagnose-cash-validation.ts",
